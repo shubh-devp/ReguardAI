@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+from pathlib import Path
 
 from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 from langchain_community.retrievers import BM25Retriever
@@ -19,6 +20,7 @@ COLLECTION_NAME = "rbi_corpus"
 FINGERPRINT_FILE = "corpus_fingerprint.json"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 EMBEDDING_BACKEND = "onnx"
+ONNX_MODEL_DIR = Path(__file__).resolve().parents[2] / "data" / "models" / "onnx_models" / EMBEDDING_MODEL
 
 
 def load_ensemble_retriever():
@@ -48,6 +50,18 @@ def load_ensemble_retriever():
 EnsembleRetriever = load_ensemble_retriever()
 
 
+class LocalOnnxMiniLm(ONNXMiniLM_L6_V2):
+    """The same ONNX encoder, reading its model file from inside the project.
+
+    ChromaDB's version downloads 79 MB into ~/.cache on first use. Render's disk
+    is ephemeral and the service sleeps when idle, so that download would repeat
+    on every cold start. Shipping the file instead makes startup deterministic
+    and keeps it off the network entirely.
+    """
+
+    DOWNLOAD_PATH = ONNX_MODEL_DIR
+
+
 class OnnxMiniLmEmbeddings(Embeddings):
     """all-MiniLM-L6-v2 running on ONNX Runtime instead of PyTorch.
 
@@ -59,7 +73,7 @@ class OnnxMiniLmEmbeddings(Embeddings):
     """
 
     def __init__(self):
-        self._encode = ONNXMiniLM_L6_V2()
+        self._encode = LocalOnnxMiniLm()
         #The ONNX graph is read on the first call, not at construction, so make
         #that call here: this object is built during warm-up, which keeps the
         #cost out of the first audit.
