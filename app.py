@@ -22,6 +22,9 @@ def run_audit():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    print("🚀 Reguard AI Backend API Server running on port 5000...")
+    # Fetch the dynamic port provided by Railway/Render (defaults to 5000 locally)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🚀 Reguard AI Backend API Server running on port {port}...")
+    
     debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
     app.run(host="0.0.0.0", port=port, debug=debug_mode)
