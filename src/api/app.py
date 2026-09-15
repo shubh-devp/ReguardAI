@@ -98,6 +98,18 @@ def validate(body):
     return clause_text, None
 
 
+@app.route("/", methods=["GET"])
+def index():
+    """Opening the base URL should not look like a broken deployment."""
+    return jsonify(
+        {
+            "service": "reguard-ai",
+            "status": "ok",
+            "endpoints": {"health": "GET /api/health", "audit": "POST /api/audit"},
+        }
+    ), 200
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     """Cheap check that does not touch the models, for uptime monitoring."""
