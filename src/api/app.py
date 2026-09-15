@@ -20,20 +20,22 @@ os.chdir(PROJECT_ROOT)
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from src.agents.orchestrator import ReguardOrchestrator
 
 app = Flask(__name__)
 CORS(app)
 
-# The orchestrator loads the ML model, the RBI corpus and the Chroma vector store.
-# It is built on first use and then reused, so the port is open while the models
-# load instead of after — Render's port scan needs to see it early.
+# The agents are imported inside the handler on purpose. Importing them pulls in
+# torch, sentence-transformers and ChromaDB, which takes tens of seconds and
+# hundreds of megabytes. Doing that at module level kept the port closed for too
+# long, so Render's port scan reported "No open ports detected" and gave up.
 _orchestrator = None
 
 
 def get_orchestrator() -> ReguardOrchestrator:
     global _orchestrator
     if _orchestrator is None:
+        from src.agents.orchestrator import ReguardOrchestrator
+
         _orchestrator = ReguardOrchestrator()
     return _orchestrator
 
