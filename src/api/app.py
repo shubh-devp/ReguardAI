@@ -74,6 +74,14 @@ def get_orchestrator():
     return _orchestrator
 
 
+def warm_up():
+    """Load the agents in the background so the first audit does not have to."""
+    try:
+        get_orchestrator()
+    except Exception:
+        logger.exception("Warm-up failed; the first audit will try again")
+
+
 def validate(body):
     """Returns (clause_text, error_message). One of the two is always None."""
     if not isinstance(body, dict):
@@ -125,6 +133,11 @@ if __name__ == "__main__":
     # Render routes traffic to the port given in $PORT; it is only 5000 locally.
     port = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+
+    # The models take a while to load, so start that in the background. The port
+    # opens straight away and Render's health check passes; by the time the user
+    # submits a clause the pipeline is usually already loaded.
+    threading.Thread(target=warm_up, daemon=True).start()
 
     logger.info("Reguard AI backend listening on port %s", port)
     app.run(host="0.0.0.0", port=port, debug=debug)

@@ -16,11 +16,13 @@ dist/
 .env
 
 
-data/chroma_db/
 data/database/*.db
 data/processed/*.pkl
 *.db
 *.sqlite
+
+# data/chroma_db is committed on purpose: it ships the prebuilt vector index so a
+# deployment loads it instead of re-embedding the whole corpus on first use.
 
 
 node_modules/

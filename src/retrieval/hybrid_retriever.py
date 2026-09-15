@@ -1,14 +1,22 @@
-import os
+import hashlib
 import json
-from langchain_core.documents import Document
+import os
+import shutil
+
+from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_classic.retrievers import EnsembleRetriever
+
+CORPUS_PATH = "data/corpus/parsed_corpus_chunks.json"
+PERSIST_DIRECTORY = "data/chroma_db"
+COLLECTION_NAME = "rbi_corpus"
+FINGERPRINT_FILE = "corpus_fingerprint.json"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 
-
-def load_chunks_from_json(json_path="data/corpus/parsed_corpus_chunks.json"):
+def load_chunks_from_json(json_path=CORPUS_PATH):
     #loading the parsed corpus chunks generated from Stage 1 parser.
     if not os.path.exists(json_path):
         raise FileNotFoundError(f"Corpus JSON not found at {json_path}. Run parser.py first!")
@@ -28,26 +36,85 @@ def load_chunks_from_json(json_path="data/corpus/parsed_corpus_chunks.json"):
     return documents
 
 
-def build_chroma_hybrid_retriever(documents, persist_directory="data/chroma_db"):
+def build_embeddings():
+    #No encoding options are passed on purpose: the defaults are what this pipeline
+    #has always used, and changing them (normalization, batching) changes the stored
+    #vectors and therefore which passages come back.
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+
+
+def _corpus_fingerprint(corpus_path):
+    #sha256 of the corpus file. If the corpus changes, the saved index is stale and
+    #gets rebuilt, so we never retrieve from vectors that no longer match the text.
+    digest = hashlib.sha256()
+    with open(corpus_path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _saved_index_is_current(corpus_path, persist_directory):
+    marker_path = os.path.join(persist_directory, FINGERPRINT_FILE)
+    if not (os.path.exists(marker_path) and os.path.exists(corpus_path)):
+        return False
+
+    try:
+        with open(marker_path, "r", encoding="utf-8") as handle:
+            saved = json.load(handle).get("corpus_sha256")
+        return saved == _corpus_fingerprint(corpus_path)
+    except (OSError, ValueError):
+        return False
+
+
+def _write_fingerprint(corpus_path, persist_directory):
+    os.makedirs(persist_directory, exist_ok=True)
+    marker_path = os.path.join(persist_directory, FINGERPRINT_FILE)
+    with open(marker_path, "w", encoding="utf-8") as handle:
+        json.dump({"corpus_sha256": _corpus_fingerprint(corpus_path)}, handle)
+
+
+def _load_or_build_vectorstore(documents, embeddings, corpus_path, persist_directory):
+    #Encoding 1268 chunks takes minutes on a small instance, so a previously built
+    #index is reused whenever it still matches the corpus.
+    if _saved_index_is_current(corpus_path, persist_directory):
+        print(f"-> Reusing the saved vector store at '{persist_directory}'")
+        return Chroma(
+            collection_name=COLLECTION_NAME,
+            embedding_function=embeddings,
+            persist_directory=persist_directory,
+        )
+
+    print(f"-> Embedding {len(documents)} chunks into '{persist_directory}'")
+    # Start from an empty directory: adding to an existing collection would leave
+    # duplicate vectors behind.
+    shutil.rmtree(persist_directory, ignore_errors=True)
+    store = Chroma.from_documents(
+        documents=documents,
+        embedding=embeddings,
+        collection_name=COLLECTION_NAME,
+        persist_directory=persist_directory,
+    )
+
+    if os.path.exists(corpus_path):
+        _write_fingerprint(corpus_path, persist_directory)
+
+    return store
+
+
+def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY):
     #hybrid search engine combining BM25 (exact keyword matching) 
     #and  dense vector search
-    print("⚙️ Initializing BM25 keyword index...")
+    print("Initializing BM25 keyword index...")
     bm25_retriever = BM25Retriever.from_documents(documents)
     bm25_retriever.k = 4
 
-    print("⚙️ Loading local SentenceTransformer model (all-MiniLM-L6-v2)...")
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    print(f"Loading local SentenceTransformer model ({EMBEDDING_MODEL})...")
+    embeddings = build_embeddings()
 
-    print(f"⚙️ Initializing ChromaDB vector store at '{persist_directory}'...")
-
-    vectorstore = Chroma.from_documents(
-        documents=documents,
-        embedding=embeddings,
-        persist_directory=persist_directory
-    )
+    vectorstore = _load_or_build_vectorstore(documents, embeddings, CORPUS_PATH, persist_directory)
     chroma_retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-    print("⚖️ Blending retrievers into a secure Hybrid Ensemble...")
+    print("Blending retrievers into a secure Hybrid Ensemble...")
     ensemble_retriever = EnsembleRetriever(
         retrievers=[bm25_retriever, chroma_retriever],
         weights=[0.4, 0.6]  # 40% keyword precision, 60% semantic similarity
@@ -55,28 +122,28 @@ def build_chroma_hybrid_retriever(documents, persist_directory="data/chroma_db")
 
     return ensemble_retriever
 
+
 if __name__ == "__main__":
-    print("🔒 Starting Stage 2: Local ChromaDB & BM25 Hybrid Retrieval Engine...")
-    
+    print("Starting Stage 2: Local ChromaDB & BM25 Hybrid Retrieval Engine...")
+
     try:
         # Load chunks from JSON
         docs = load_chunks_from_json()
-        
+
         # Build Chroma hybrid retriever
         retriever = build_chroma_hybrid_retriever(docs)
-        
+
         # Test query mimicking a fintech regulatory compliance check
         query = "What is the minimum cooling-off period required for digital loans?"
-        print(f"\n🔍 Executing test query locally via ChromaDB: '{query}'")
-        
+        print(f"\nExecuting test query locally via ChromaDB: '{query}'")
         results = retriever.invoke(query)
-        
-        print(f"\n✨ ChromaDB hybrid retrieval successful! Top {len(results)} matches found:")
+
+        print(f"\nChromaDB hybrid retrieval successful! Top {len(results)} matches found:")
         print("=" * 60)
         for idx, res in enumerate(results):
             print(f"Match [{idx + 1}] | Source: {res.metadata.get('source')} | Type: {res.metadata.get('type')}")
             print(f"Snippet: {res.page_content[:250]}...")
             print("-" * 60)
-            
+
     except Exception as e:
-        print(f"❌ Error setting up ChromaDB hybrid retrieval: {e}")
+        print(f"Error setting up ChromaDB hybrid retrieval: {e}")

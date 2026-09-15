@@ -571,8 +571,11 @@ Notes worth knowing before you demo it:
 
 - `requirements.txt` pins the **CPU-only** PyTorch wheel. The default Linux wheel pulls the whole
   CUDA stack (several GB) and will run the service out of memory.
-- The first audit after each deploy is slower, because the models load and the corpus is embedded
-  into the vector store on first use. Later requests are fast.
+- The vector index (`data/chroma_db`) is committed, so a deployment loads it instead of
+  re-embedding all 1268 corpus chunks. The retriever checks a fingerprint of the corpus and
+  rebuilds the index automatically if the corpus ever changes.
+- The pipeline warm-up runs in the background right after the port opens, so the health check
+  responds immediately while the models load.
 - The SQLite audit trail lives on the instance's ephemeral disk, so it resets on every deploy.
 
 ## 🧪 Example Workflow
