@@ -494,33 +494,88 @@ reguard-ai/
 │   ├── corpus/                     # Parsed RBI statutory text chunks (JSON)
 │   ├── database/                   # SQLite audit trail (reguard_audit.db)
 │   └── processed/                  # Serialized ML classifier weights (.pkl)
-├── frontend/
-│   └── api/
-│       └── audit.js               # Configurable frontend API client service
+├── frontend/                       # React + Tailwind single-page UI
+│   └── src/
+│       ├── App.jsx                 # Page shell: header, form, loading, results
+│       ├── api/audit.js            # Backend client (uses VITE_API_URL)
+│       └── components/             # AuditForm, AuditResults
 ├── src/
 │   ├── agents/
-│   │   ├── analyst.py              # Clause structural parser agent
-│   │   ├── auditor.py              # Regulatory compliance auditor agent
+│   │   ├── llm.py                  # Shared Gemini client, retries, JSON parsing
+│   │   ├── analyst.py              # Clause structural parser (standalone)
 │   │   ├── challenger.py           # Adversarial red-team attacker agent
-│   │   ├── orchestrator.py         # End-to-end pipeline orchestrator loop
+│   │   ├── auditor.py              # Regulatory compliance auditor agent
+│   │   ├── verifier.py             # Evidence support validator (fail-closed)
 │   │   ├── remediator.py           # Policy patch generator agent
-│   │   └── verifier.py             # Evidence support validator (fail-closed)
+│   │   ├── retest.py               # Deterministic ASR re-test agent
+│   │   └── orchestrator.py         # End-to-end pipeline orchestrator loop
 │   ├── database/
 │   │   └── sql_manager.py          # SQLite schema, init, and insert operations
+│   ├── ingestion/
+│   │   └── parser.py               # Builds corpus chunks from the RBI PDFs
 │   ├── models/
 │   │   └── risk_classifier.py      # TF-IDF + Logistic Regression triage gatekeeper
 │   ├── retrieval/
 │   │   └── hybrid_retriever.py     # BM25 + ChromaDB ensemble retriever
+│   ├── evaluation/
+│   │   ├── evaluate.py             # Classifier / retrieval scoring script
+│   │   └── evaluate_pipeline.py    # Benchmark harness for the pipeline
 │   ├── cli.py                      # Batch file auditing command-line interface
 │   └── api/
-│       └── main.py                 # FastAPI service bindings
-├── app.py                          # Production Flask backend entrypoint server
+│       └── app.py                  # Flask API: POST /api/audit, GET /api/health
+├── Procfile                        # Start command used by Render
+├── .env.example                    # Template for the environment variables
 ├── requirements.txt                # Python backend dependencies
 └── README.md                       # Project documentation
 
 
 
-🧪 Example Workflow
+## 🛠️ Running Locally
+
+```bash
+# Backend
+python -m venv venv
+venv\Scripts\activate                 # Windows  (source venv/bin/activate on macOS/Linux)
+pip install -r requirements.txt
+copy .env.example .env                # then paste your GEMINI_API_KEY into .env
+python -m src.api.app                 # http://localhost:5000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev                           # http://localhost:5173
+```
+
+Quick check that the API is up: `GET http://localhost:5000/api/health`
+
+## 🚀 Deployment (Render)
+
+**Backend — Web Service**
+
+| Setting | Value |
+|---|---|
+| Build command | `pip install -r requirements.txt` |
+| Start command | `python -m src.api.app` (also provided in the `Procfile`) |
+| Environment | `GEMINI_API_KEY`, `PYTHON_VERSION` = `3.12.7` |
+
+**Frontend — Static Site**
+
+| Setting | Value |
+|---|---|
+| Root directory | `frontend` |
+| Build command | `npm install && npm run build` |
+| Publish directory | `dist` |
+| Environment | `VITE_API_URL` = `https://<your-backend>.onrender.com/api/audit` |
+
+Notes worth knowing before you demo it:
+
+- `requirements.txt` pins the **CPU-only** PyTorch wheel. The default Linux wheel pulls the whole
+  CUDA stack (several GB) and will run the service out of memory.
+- The first audit after each deploy is slower, because the models load and the corpus is embedded
+  into the vector store on first use. Later requests are fast.
+- The SQLite audit trail lives on the instance's ephemeral disk, so it resets on every deploy.
+
+## 🧪 Example Workflow
 
 A typical Reguard AI analysis looks like:
 

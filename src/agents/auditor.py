@@ -1,10 +1,10 @@
-import os
 import json
-from google import genai
-from google.genai import types
+import logging
+
+from src.agents.llm import ensure_api_key, generate_json
 from src.retrieval.hybrid_retriever import load_chunks_from_json, build_chroma_hybrid_retriever
-from dotenv import load_dotenv
-load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class RegulatoryAuditor:
     """
@@ -19,8 +19,7 @@ class RegulatoryAuditor:
             self.retriever = None
 
     def audit_clause(self, clause_text: str, attack_scenario: dict) -> dict:
-        if not os.environ.get("GEMINI_API_KEY"):
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
+        ensure_api_key()
 
         # 1. Retrieve statutory evidence locally
         retrieved_passage_text = "RBI/2023-24/53: Statutory regulatory guideline on penal charges."
@@ -36,8 +35,6 @@ class RegulatoryAuditor:
                     matched_id = top_doc.metadata.get("source", "RBI-REF-01")
             except Exception as e:
                 print(f"[Warning] RAG retrieval error in auditor: {e}")
-
-        client = genai.Client()
 
         prompt = f"""
         You are the Regulatory Auditor Agent for Reguard AI, an enterprise RBI compliance engine.
@@ -67,32 +64,19 @@ class RegulatoryAuditor:
         """
 
         try:
-            response = client.models.generate_content(
-                model='gemini-3.5-flash-lite',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                ),
-            )
+            result = generate_json(prompt, temperature=0.1)
 
-            raw_text = response.text.strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-            raw_text = raw_text.strip()
-
-            result = json.loads(raw_text)
-            result["retrieved_passage"] = retrieved_passage_text
-            result["matched_rbi_passage_id"] = matched_id
-            return result
-
-        except Exception as e:
-            print(f"[Error] Failed during audit analysis: {e}")
+        except Exception as error:
+            logger.error("Auditor agent failed: %s", error)
             return {
                 "violation_confirmed": False,
                 "severity": "Low",
-                "explanation": f"Audit analysis failed due to error: {str(e)}",
+                "explanation": f"Audit analysis failed due to error: {str(error)}",
                 "matched_rbi_passage_id": matched_id,
                 "retrieved_passage": retrieved_passage_text
             }
+
+        # The retrieved text is authoritative, so it is not taken from the model.
+        result["retrieved_passage"] = retrieved_passage_text
+        result["matched_rbi_passage_id"] = matched_id
+        return result

@@ -1,9 +1,10 @@
-import os
 import json
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
-load_dotenv()
+import logging
+
+from src.agents.llm import ensure_api_key, generate_json
+
+logger = logging.getLogger(__name__)
+
 
 def verify_evidence(clause_text: str, audit_finding: dict, retrieved_passage: str) -> dict:
     """
@@ -11,10 +12,7 @@ def verify_evidence(clause_text: str, audit_finding: dict, retrieved_passage: st
     against the actual retrieved RBI legal passage to prevent citation hallucination.
     Fails closed (is_supported = False) on any exception or parsing error.
     """
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise ValueError("GEMINI_API_KEY environment variable is not set. Please configure it.")
-
-    client = genai.Client()
+    ensure_api_key()
 
     prompt = f"""
     You are the Evidence Verifier Agent for Reguard AI.
@@ -43,29 +41,15 @@ def verify_evidence(clause_text: str, audit_finding: dict, retrieved_passage: st
     """
 
     try:
-        response = client.models.generate_content(
-            model='gemini-3.5-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,  # Low temperature for strict factual checking
-            ),
-        )
+        # Low temperature, because this step is a strict factual check.
+        return generate_json(prompt, temperature=0.1)
 
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-
-        return json.loads(raw_text)
-
-    except Exception as e:
-        print(f"[Error] Failed during evidence verification: {e}")
-        # SECURITY FIX: Fail closed on errors to prevent unverified passages from slipping through
+    except Exception as error:
+        logger.error("Evidence verifier failed: %s", error)
+        # Fail closed, so an unverified passage can never be treated as supported.
         return {
             "is_supported": False,
-            "verification_rationale": f"Verification failed closed due to error/parsing failure: {str(e)}",
+            "verification_rationale": f"Verification failed closed due to error/parsing failure: {str(error)}",
             "confidence_score": 0.0
         }
 

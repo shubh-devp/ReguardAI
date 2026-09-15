@@ -1,9 +1,9 @@
-import os
 import json
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
-load_dotenv()
+import logging
+
+from src.agents.llm import ensure_api_key, generate_json
+
+logger = logging.getLogger(__name__)
 
 
 def generate_adversarial_attack(structured_clause: dict) -> dict:
@@ -11,10 +11,7 @@ def generate_adversarial_attack(structured_clause: dict) -> dict:
     Red-Team Challenger Agent. Takes a structured clause and simulates an 
     adversarial audit to find compliance loopholes or RBI guideline violations.
     """
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise ValueError("GEMINI_API_KEY environment variable is not set. Please configure it.")
-
-    client = genai.Client()
+    ensure_api_key()
 
     prompt = f"""
     You are the Challenger (Red-Team) Agent for Reguard AI. 
@@ -39,37 +36,17 @@ def generate_adversarial_attack(structured_clause: dict) -> dict:
     """
 
     try:
-        response = client.models.generate_content(
-            model='gemini-3.5-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.6,  # Higher temperature gives creative red-team scenarios
-            ),
-        )
+        # A higher temperature gives the challenger room for creative attack scenarios.
+        return generate_json(prompt, temperature=0.6)
 
-        # Clean markdown code blocks if the model includes them
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-
-        return json.loads(raw_text)
-
-    except json.JSONDecodeError as jde:
-        print(f"[Warning] Failed to parse JSON attack report: {jde}")
-        print(f"Raw response was: {response.text}")
+    except Exception as error:
+        logger.error("Challenger agent failed: %s", error)
         return {
             "vulnerability_detected": False,
             "explanation": "Failed to parse model response as JSON.",
             "severity": "Low",
             "attack_scenario": ""
         }
-        
-    except Exception as e:
-        print(f"[Error] Encountered an issue during Challenger agent execution: {e}")
-        return {}
 
 if __name__ == "__main__":
     print("--- Running Red-Team Challenger Agent (challenger.py) ---")

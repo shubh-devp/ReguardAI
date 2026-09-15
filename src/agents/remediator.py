@@ -1,9 +1,10 @@
-import os
 import json
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
-load_dotenv()
+import logging
+
+from src.agents.llm import ensure_api_key, generate_json
+
+logger = logging.getLogger(__name__)
+
 
 def remediate_clause(clause_text: str, audit_finding: dict) -> dict:
     """
@@ -11,10 +12,7 @@ def remediate_clause(clause_text: str, audit_finding: dict) -> dict:
     Does NOT generate ASR numbers; all ASR metrics are calculated programmatically 
     by the deterministic Re-Test Agent.
     """
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise ValueError("GEMINI_API_KEY environment variable is not set. Please configure it.")
-
-    client = genai.Client()
+    ensure_api_key()
 
     prompt = f"""
     You are the Remediator Agent for Reguard AI, an enterprise RBI compliance engine.
@@ -39,33 +37,18 @@ def remediate_clause(clause_text: str, audit_finding: dict) -> dict:
     """
 
     try:
-        response = client.models.generate_content(
-            model='gemini-3.5-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.2,
-            ),
-        )
+        result = generate_json(prompt, temperature=0.2)
 
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-
-        result = json.loads(raw_text)
-        
-        # Ensure fallback placeholders for ASR (to be overwritten deterministically by ReTestAgent)
+        # ASR is filled in deterministically by the Re-Test Agent, never by the model.
         result["asr_before"] = 0.0
         result["asr_after"] = 0.0
         return result
 
-    except Exception as e:
-        print(f"[Error] Failed during remediation drafting: {e}")
+    except Exception as error:
+        logger.error("Remediator agent failed: %s", error)
         return {
             "patched_clause_text": clause_text,
-            "remediation_rationale": f"Remediation drafting failed due to error: {str(e)}",
+            "remediation_rationale": f"Remediation drafting failed due to error: {str(error)}",
             "status": "Failed",
             "asr_before": 0.0,
             "asr_after": 0.0
