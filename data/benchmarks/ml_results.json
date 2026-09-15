@@ -1,0 +1,604 @@
+{
+  "dataset": {
+    "total_clauses": 24,
+    "loophole": 12,
+    "compliant": 12,
+    "distinct_topics": 10,
+    "topics": {
+      "APR/KFS disclosure": 2,
+      "Cooling-off period": 2,
+      "Credit line enhancement": 2,
+      "DLA/LSP disclosure": 2,
+      "Data sharing/consent": 2,
+      "Direct disbursal": 2,
+      "FLDG/DLG": 4,
+      "Grievance redressal": 2,
+      "LSP due diligence/governance": 2,
+      "penal charges": 4
+    },
+    "severity_distribution": {
+      "High": 4,
+      "Low": 1,
+      "Medium": 7,
+      "n/a": 12
+    },
+    "severity_source": "derived from a documented topic rule, not annotated",
+    "gold_evidence_pages": 36,
+    "distinct_gold_documents": 2
+  },
+  "cross_validation": {
+    "logistic_regression": {
+      "label": "true",
+      "description": "TF-IDF word 1-2 grams + logistic regression (the shipped model)",
+      "folds": [
+        {
+          "accuracy": 0.6,
+          "precision": 1.0,
+          "recall": 0.3333,
+          "f1": 0.5,
+          "roc_auc": 0.6667
+        },
+        {
+          "accuracy": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "roc_auc": 0.0
+        },
+        {
+          "accuracy": 0.4,
+          "precision": 0.3333,
+          "recall": 0.5,
+          "f1": 0.4,
+          "roc_auc": 0.3333
+        },
+        {
+          "accuracy": 0.4,
+          "precision": 0.3333,
+          "recall": 0.5,
+          "f1": 0.4,
+          "roc_auc": 0.5
+        },
+        {
+          "accuracy": 0.5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "roc_auc": 0.5
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median": 0.4,
+          "min": 0.0,
+          "max": 0.6,
+          "mean": 0.38
+        },
+        "precision": {
+          "median": 0.3333,
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.3333
+        },
+        "recall": {
+          "median": 0.3333,
+          "min": 0.0,
+          "max": 0.5,
+          "mean": 0.2667
+        },
+        "f1": {
+          "median": 0.4,
+          "min": 0.0,
+          "max": 0.5,
+          "mean": 0.26
+        },
+        "roc_auc": {
+          "median": 0.5,
+          "min": 0.0,
+          "max": 0.6667,
+          "mean": 0.4
+        }
+      },
+      "pooled_confusion_matrix": {
+        "labels": [
+          "compliant(0)",
+          "loophole(1)"
+        ],
+        "matrix": [
+          [
+            6,
+            6
+          ],
+          [
+            9,
+            3
+          ]
+        ]
+      }
+    },
+    "linear_svc": {
+      "label": "true",
+      "description": "TF-IDF word 1-2 grams + linear SVM",
+      "folds": [
+        {
+          "accuracy": 0.6,
+          "precision": 1.0,
+          "recall": 0.3333,
+          "f1": 0.5,
+          "roc_auc": 0.6667
+        },
+        {
+          "accuracy": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "roc_auc": 0.0
+        },
+        {
+          "accuracy": 0.4,
+          "precision": 0.3333,
+          "recall": 0.5,
+          "f1": 0.4,
+          "roc_auc": 0.3333
+        },
+        {
+          "accuracy": 0.4,
+          "precision": 0.3333,
+          "recall": 0.5,
+          "f1": 0.4,
+          "roc_auc": 0.5
+        },
+        {
+          "accuracy": 0.75,
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "roc_auc": 0.5
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median": 0.4,
+          "min": 0.0,
+          "max": 0.75,
+          "mean": 0.43
+        },
+        "precision": {
+          "median": 0.3333,
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.5333
+        },
+        "recall": {
+          "median": 0.5,
+          "min": 0.0,
+          "max": 0.5,
+          "mean": 0.3667
+        },
+        "f1": {
+          "median": 0.4,
+          "min": 0.0,
+          "max": 0.6667,
+          "mean": 0.3933
+        },
+        "roc_auc": {
+          "median": 0.5,
+          "min": 0.0,
+          "max": 0.6667,
+          "mean": 0.4
+        }
+      },
+      "pooled_confusion_matrix": {
+        "labels": [
+          "compliant(0)",
+          "loophole(1)"
+        ],
+        "matrix": [
+          [
+            6,
+            6
+          ],
+          [
+            8,
+            4
+          ]
+        ]
+      }
+    },
+    "logistic_regression_char": {
+      "label": "true",
+      "description": "TF-IDF character 3-5 grams + logistic regression",
+      "folds": [
+        {
+          "accuracy": 0.6,
+          "precision": 1.0,
+          "recall": 0.3333,
+          "f1": 0.5,
+          "roc_auc": 0.8333
+        },
+        {
+          "accuracy": 0.4,
+          "precision": 0.5,
+          "recall": 0.3333,
+          "f1": 0.4,
+          "roc_auc": 0.5
+        },
+        {
+          "accuracy": 0.6,
+          "precision": 0.5,
+          "recall": 1.0,
+          "f1": 0.6667,
+          "roc_auc": 0.6667
+        },
+        {
+          "accuracy": 0.8,
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "roc_auc": 0.6667
+        },
+        {
+          "accuracy": 0.5,
+          "precision": 0.5,
+          "recall": 0.5,
+          "f1": 0.5,
+          "roc_auc": 0.5
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median": 0.6,
+          "min": 0.4,
+          "max": 0.8,
+          "mean": 0.58
+        },
+        "precision": {
+          "median": 0.5,
+          "min": 0.5,
+          "max": 1.0,
+          "mean": 0.7
+        },
+        "recall": {
+          "median": 0.5,
+          "min": 0.3333,
+          "max": 1.0,
+          "mean": 0.5333
+        },
+        "f1": {
+          "median": 0.5,
+          "min": 0.4,
+          "max": 0.6667,
+          "mean": 0.5467
+        },
+        "roc_auc": {
+          "median": 0.6667,
+          "min": 0.5,
+          "max": 0.8333,
+          "mean": 0.6333
+        }
+      },
+      "pooled_confusion_matrix": {
+        "labels": [
+          "compliant(0)",
+          "loophole(1)"
+        ],
+        "matrix": [
+          [
+            8,
+            4
+          ],
+          [
+            6,
+            6
+          ]
+        ]
+      }
+    }
+  },
+  "shuffled_label_control": {
+    "logistic_regression": {
+      "accuracy": {
+        "median": 0.6,
+        "min": 0.2,
+        "max": 0.6,
+        "mean": 0.5
+      },
+      "precision": {
+        "median": 0.5,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.5
+      },
+      "recall": {
+        "median": 0.5,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.5667
+      },
+      "f1": {
+        "median": 0.5,
+        "min": 0.0,
+        "max": 0.6667,
+        "mean": 0.4667
+      },
+      "roc_auc": {
+        "median": 0.6667,
+        "min": 0.0,
+        "max": 0.75,
+        "mean": 0.55
+      }
+    },
+    "linear_svc": {
+      "accuracy": {
+        "median": 0.6,
+        "min": 0.2,
+        "max": 0.6,
+        "mean": 0.5
+      },
+      "precision": {
+        "median": 0.5,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.5
+      },
+      "recall": {
+        "median": 0.5,
+        "min": 0.0,
+        "max": 1.0,
+        "mean": 0.5667
+      },
+      "f1": {
+        "median": 0.5,
+        "min": 0.0,
+        "max": 0.6667,
+        "mean": 0.4667
+      },
+      "roc_auc": {
+        "median": 0.6667,
+        "min": 0.0,
+        "max": 0.75,
+        "mean": 0.55
+      }
+    },
+    "logistic_regression_char": {
+      "accuracy": {
+        "median": 0.4,
+        "min": 0.2,
+        "max": 0.5,
+        "mean": 0.38
+      },
+      "precision": {
+        "median": 0.3333,
+        "min": 0.3333,
+        "max": 0.5,
+        "mean": 0.4
+      },
+      "recall": {
+        "median": 0.5,
+        "min": 0.3333,
+        "max": 0.5,
+        "mean": 0.4333
+      },
+      "f1": {
+        "median": 0.4,
+        "min": 0.3333,
+        "max": 0.5,
+        "mean": 0.4067
+      },
+      "roc_auc": {
+        "median": 0.3333,
+        "min": 0.1667,
+        "max": 0.6667,
+        "mean": 0.4
+      }
+    }
+  },
+  "held_out_test_split": {
+    "train_size": 16,
+    "test_size": 3,
+    "logistic_regression": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "confusion_matrix": {
+        "labels": [
+          "compliant(0)",
+          "loophole(1)"
+        ],
+        "matrix": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            2
+          ]
+        ]
+      }
+    },
+    "linear_svc": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "confusion_matrix": {
+        "labels": [
+          "compliant(0)",
+          "loophole(1)"
+        ],
+        "matrix": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            2
+          ]
+        ]
+      }
+    },
+    "logistic_regression_char": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "confusion_matrix": {
+        "labels": [
+          "compliant(0)",
+          "loophole(1)"
+        ],
+        "matrix": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            2
+          ]
+        ]
+      }
+    }
+  },
+  "gate_behaviour": {
+    "threshold": 0.3,
+    "flagged_for_red_teaming": 24,
+    "of_total": 24,
+    "precision": 0.5,
+    "recall": 1.0,
+    "confusion_matrix": {
+      "labels": [
+        "compliant(0)",
+        "loophole(1)"
+      ],
+      "matrix": [
+        [
+          0,
+          12
+        ],
+        [
+          0,
+          12
+        ]
+      ]
+    }
+  },
+  "explainability": {
+    "pushes_towards_loophole": [
+      {
+        "feature": "risk",
+        "weight": 0.1529
+      },
+      {
+        "feature": "customer",
+        "weight": 0.1489
+      },
+      {
+        "feature": "borrowers",
+        "weight": 0.1448
+      },
+      {
+        "feature": "net",
+        "weight": 0.1259
+      },
+      {
+        "feature": "individual",
+        "weight": 0.1254
+      },
+      {
+        "feature": "risk profile",
+        "weight": 0.1203
+      },
+      {
+        "feature": "profile",
+        "weight": 0.1203
+      },
+      {
+        "feature": "higher",
+        "weight": 0.116
+      },
+      {
+        "feature": "addition",
+        "weight": 0.1134
+      },
+      {
+        "feature": "practices",
+        "weight": 0.1118
+      },
+      {
+        "feature": "partner",
+        "weight": 0.1115
+      },
+      {
+        "feature": "complaints",
+        "weight": 0.1087
+      }
+    ],
+    "pushes_towards_compliant": [
+      {
+        "feature": "disclosed",
+        "weight": -0.1825
+      },
+      {
+        "feature": "upfront",
+        "weight": -0.1464
+      },
+      {
+        "feature": "does",
+        "weight": -0.1453
+      },
+      {
+        "feature": "penal charge",
+        "weight": -0.1434
+      },
+      {
+        "feature": "lsp",
+        "weight": -0.142
+      },
+      {
+        "feature": "penal",
+        "weight": -0.1358
+      },
+      {
+        "feature": "website",
+        "weight": -0.1343
+      },
+      {
+        "feature": "total",
+        "weight": -0.1224
+      },
+      {
+        "feature": "disbursal",
+        "weight": -0.1194
+      },
+      {
+        "feature": "fact",
+        "weight": -0.1158
+      },
+      {
+        "feature": "fact statement",
+        "weight": -0.1158
+      },
+      {
+        "feature": "key",
+        "weight": -0.1158
+      }
+    ]
+  },
+  "shipped_model": {
+    "name": "logistic_regression",
+    "description": "TF-IDF word 1-2 grams + logistic regression (the shipped model)",
+    "trained_on": 24
+  },
+  "caveats": [
+    "The benchmark holds 24 clauses, so every figure here has a wide confidence interval.",
+    "The held-out test split is 3 clauses and is reported only for completeness.",
+    "Severity in the dataset summary is derived from a documented topic rule, not annotated."
+  ]
+}
