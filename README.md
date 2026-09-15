@@ -569,11 +569,13 @@ Quick check that the API is up: `GET http://localhost:5000/api/health`
 
 Notes worth knowing before you demo it:
 
-- `requirements.txt` pins the **CPU-only** PyTorch wheel. The default Linux wheel pulls the whole
-  CUDA stack (several GB) and will run the service out of memory.
+- Embeddings run on **ONNX Runtime**, not PyTorch. `all-MiniLM-L6-v2` is the same model either way,
+  but the PyTorch path needs `torch`, `transformers` and `sentence-transformers`, which together cost
+  hundreds of MB of memory on a 512 MB instance. The ONNX build needs `onnxruntime` only, and it is
+  downloaded once on first use into `~/.cache/chroma`.
 - The vector index (`data/chroma_db`) is committed, so a deployment loads it instead of
-  re-embedding all 1268 corpus chunks. The retriever checks a fingerprint of the corpus and
-  rebuilds the index automatically if the corpus ever changes.
+  re-embedding all 1268 corpus chunks. The retriever checks a fingerprint of the corpus and the
+  encoder, and rebuilds the index automatically if either changes.
 - The pipeline warm-up runs in the background right after the port opens, so the health check
   responds immediately while the models load.
 - The SQLite audit trail lives on the instance's ephemeral disk, so it resets on every deploy.

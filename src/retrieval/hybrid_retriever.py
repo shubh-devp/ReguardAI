@@ -1,19 +1,77 @@
 import hashlib
+import importlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 import shutil
+import sys
 
-from langchain_classic.retrievers import EnsembleRetriever
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 
 CORPUS_PATH = "data/corpus/parsed_corpus_chunks.json"
 PERSIST_DIRECTORY = "data/chroma_db"
 COLLECTION_NAME = "rbi_corpus"
 FINGERPRINT_FILE = "corpus_fingerprint.json"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_BACKEND = "onnx"
+
+
+def load_ensemble_retriever():
+    """Return EnsembleRetriever without importing the package that ships it.
+
+    `from langchain_classic.retrievers import EnsembleRetriever` runs that
+    package's __init__, which eagerly imports every retriever LangChain has. One
+    of them pulls in transformers, and transformers drags torch along behind it -
+    hundreds of megabytes this pipeline never touches. Registering the package
+    directory without running its __init__ lets the ensemble module load on its
+    own; it needs nothing beyond langchain-core.
+    """
+    package = "langchain_classic.retrievers"
+    if package not in sys.modules:
+        import langchain_classic
+
+        spec = importlib.machinery.ModuleSpec(package, None, is_package=True)
+        stub = importlib.util.module_from_spec(spec)
+        stub.__path__ = [
+            os.path.join(os.path.dirname(langchain_classic.__file__), "retrievers")
+        ]
+        sys.modules[package] = stub
+
+    return importlib.import_module(f"{package}.ensemble").EnsembleRetriever
+
+
+EnsembleRetriever = load_ensemble_retriever()
+
+
+class OnnxMiniLmEmbeddings(Embeddings):
+    """all-MiniLM-L6-v2 running on ONNX Runtime instead of PyTorch.
+
+    It is the same model with the same weights, but it needs onnxruntime rather
+    than torch, and torch on its own is roughly 250 MB of resident memory. On a
+    512 MB instance that is the difference between an audit finishing and the
+    process being killed. ChromaDB ships this encoder but exposes it with a
+    different method name, so it is wrapped in the LangChain interface here.
+    """
+
+    def __init__(self):
+        self._encode = ONNXMiniLM_L6_V2()
+        #The ONNX graph is read on the first call, not at construction, so make
+        #that call here: this object is built during warm-up, which keeps the
+        #cost out of the first audit.
+        self._encode(["warm up"])
+
+    def embed_documents(self, texts):
+        #The encoder hands back numpy scalars, which ChromaDB refuses to store,
+        #so each value is converted to a plain float on the way out.
+        return [[float(value) for value in vector] for vector in self._encode(list(texts))]
+
+    def embed_query(self, text):
+        return [float(value) for value in self._encode([text])[0]]
 
 
 def load_chunks_from_json(json_path=CORPUS_PATH):
@@ -50,7 +108,7 @@ def build_embeddings():
     #vectors and therefore which passages come back.
     global _embeddings
     if _embeddings is None:
-        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        _embeddings = OnnxMiniLmEmbeddings()
     return _embeddings
 
 
@@ -71,8 +129,13 @@ def _saved_index_is_current(corpus_path, persist_directory):
 
     try:
         with open(marker_path, "r", encoding="utf-8") as handle:
-            saved = json.load(handle).get("corpus_sha256")
-        return saved == _corpus_fingerprint(corpus_path)
+            saved = json.load(handle)
+        # The backend is part of the check because vectors written by one encoder
+        # cannot be searched with queries from another.
+        return (
+            saved.get("corpus_sha256") == _corpus_fingerprint(corpus_path)
+            and saved.get("embedding_backend") == EMBEDDING_BACKEND
+        )
     except (OSError, ValueError):
         return False
 
@@ -81,7 +144,13 @@ def _write_fingerprint(corpus_path, persist_directory):
     os.makedirs(persist_directory, exist_ok=True)
     marker_path = os.path.join(persist_directory, FINGERPRINT_FILE)
     with open(marker_path, "w", encoding="utf-8") as handle:
-        json.dump({"corpus_sha256": _corpus_fingerprint(corpus_path)}, handle)
+        json.dump(
+            {
+                "corpus_sha256": _corpus_fingerprint(corpus_path),
+                "embedding_backend": EMBEDDING_BACKEND,
+            },
+            handle,
+        )
 
 
 def _load_or_build_vectorstore(documents, embeddings, corpus_path, persist_directory):
