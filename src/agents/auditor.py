@@ -16,6 +16,9 @@ class RegulatoryAuditor:
             docs = load_chunks_from_json()
             self.retriever = build_chroma_hybrid_retriever(docs)
         except Exception:
+            #Falling back to a fixed passage is the safe behaviour, but it is
+            #also silent evidence loss, so make the reason visible in the log.
+            logger.exception("Retriever unavailable; audits will use a fixed passage")
             self.retriever = None
 
     def audit_clause(self, clause_text: str, attack_scenario: dict) -> dict:
