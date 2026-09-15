@@ -36,11 +36,22 @@ def load_chunks_from_json(json_path=CORPUS_PATH):
     return documents
 
 
+#One shared embedding model and one shared retriever per persist directory. Both
+#the auditor and the re-test agent ask for a retriever, and without this cache
+#each one loaded its own copy of all-MiniLM-L6-v2 and its own BM25 index. On a
+#512 MB instance that duplication is enough to get the process killed.
+_embeddings = None
+_retrievers = {}
+
+
 def build_embeddings():
     #No encoding options are passed on purpose: the defaults are what this pipeline
     #has always used, and changing them (normalization, batching) changes the stored
     #vectors and therefore which passages come back.
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    global _embeddings
+    if _embeddings is None:
+        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    return _embeddings
 
 
 def _corpus_fingerprint(corpus_path):
@@ -104,6 +115,11 @@ def _load_or_build_vectorstore(documents, embeddings, corpus_path, persist_direc
 def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY):
     #hybrid search engine combining BM25 (exact keyword matching) 
     #and  dense vector search
+    #Callers that pass the same corpus get the same retriever back, so only one
+    #BM25 index and one vector store are held in memory.
+    if persist_directory in _retrievers:
+        return _retrievers[persist_directory]
+
     print("Initializing BM25 keyword index...")
     bm25_retriever = BM25Retriever.from_documents(documents)
     bm25_retriever.k = 4
@@ -120,6 +136,7 @@ def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY
         weights=[0.4, 0.6]  # 40% keyword precision, 60% semantic similarity
     )
 
+    _retrievers[persist_directory] = ensemble_retriever
     return ensemble_retriever
 
 
