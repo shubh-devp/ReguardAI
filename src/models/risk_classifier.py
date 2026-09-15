@@ -1,18 +1,51 @@
+"""TF-IDF + Logistic Regression clause risk triage.
+
+This is the gate at the front of the pipeline. It answers one question: is this
+clause worth spending an expensive multi-agent audit on? It is deliberately a
+small, fast, classical model rather than an LLM call, because running it on every
+clause costs nothing.
+
+It is trained on the labelled benchmark in ``data/benchmarks`` - the same clauses
+the evaluation scores it on, so there is one source of truth for the labels. The
+earlier version trained on eight hand-written sentences copied five times, which
+put identical sentences in both halves of its own train/test split.
+"""
+
+import logging
 import os
 import pickle
-import pandas as pd
-from sklearn.model_selection import train_test_split
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, f1_score
+
+logger = logging.getLogger(__name__)
+
+MODEL_PATH = "data/processed/risk_model.pkl"
+
+# The score above which a clause is sent for red-teaming. Kept at the value the
+# pipeline has always used; the evaluation reports what it costs in precision.
+RED_TEAM_THRESHOLD = 0.3
+HIGH_RISK_THRESHOLD = 0.6
+
+
+def build_vectorizer():
+    """The shipped feature extractor."""
+    return TfidfVectorizer(ngram_range=(1, 2), stop_words="english")
+
+
+def build_classifier():
+    """The shipped classifier.
+
+    ``class_weight='balanced'`` keeps the two benchmark labels on equal footing,
+    and ``predict_proba`` gives the calibrated score the gate needs.
+    """
+    return LogisticRegression(class_weight="balanced", max_iter=1000)
+
 
 class PolicyRiskClassifier:
-    """
-    Classical ML Risk Classifier for Reguard AI.
-    Uses TF-IDF and Logistic Regression with a strict Train/Test split 
-    to prevent data leakage and evaluate generalization on unseen clauses.
-    """
-    def __init__(self, model_path="data/processed/risk_model.pkl"):
+    """Loads the saved model, training it from the benchmark if none exists."""
+
+    def __init__(self, model_path=MODEL_PATH):
         self.model_path = model_path
         self.vectorizer = None
         self.classifier = None
@@ -21,102 +54,67 @@ class PolicyRiskClassifier:
     def _load_or_train_model(self):
         if os.path.exists(self.model_path):
             try:
-                with open(self.model_path, "rb") as f:
-                    data = pickle.load(f)
-                    self.vectorizer = data["vectorizer"]
-                    self.classifier = data["classifier"]
-                # Silent load for runtime use
+                with open(self.model_path, "rb") as handle:
+                    bundle = pickle.load(handle)
+                self.vectorizer = bundle["vectorizer"]
+                self.classifier = bundle["classifier"]
                 return
             except Exception:
-                pass  # Fallback to training if pickle is invalid
+                # A stale or unreadable pickle should not stop the service, but it
+                # should not vanish silently either.
+                logger.exception("Could not load %s; retraining from the benchmark", self.model_path)
 
-        # Train a fresh model with strict train/test split if no saved model exists
-        self.train_and_evaluate()
+        self.train()
 
-    def train_and_evaluate(self):
-        print("🧠 Training Risk Classifier with strict Train/Test split...")
-        
-        # Benchmark dataset for compliance risk classification
-        data = [
-            ("The lender shall levy a penal charge of 2% per month on delayed repayments.", 1),
-            ("Interest shall be compounded monthly on all overdue principal and charges.", 1),
-            ("Prepayment penalty of 3% applies if foreclosed within the first year.", 1),
-            ("Penal interest will be charged automatically on default days.", 1),
-            ("Borrowers can access their Key Fact Statement anytime through the mobile app.", 0),
-            ("The annual percentage rate (APR) is disclosed transparently in the sanction letter.", 0),
-            ("No foreclosure charges shall be levied on floating rate personal loans.", 0),
-            ("Repayment schedules are provided in advance with clear EMI breakdowns.", 0),
-        ]
-        
-        # Expand dataset slightly for stable splitting if needed, or use base dataset
-        df = pd.DataFrame(data * 5, columns=["clause", "label"])
-        
-        X_train, X_test, y_train, y_test = train_test_split(
-            df["clause"], df["label"], test_size=0.25, random_state=42, stratify=df["label"]
-        )
+    def train(self, records=None):
+        """Fit on the labelled benchmark and persist the model."""
+        if records is None:
+            # Imported here so the module stays importable without the benchmark
+            # present, which keeps the API boot resilient.
+            from src.evaluation.benchmark import build_dataset
 
-        self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words='english')
-        X_train_vec = self.vectorizer.fit_transform(X_train)
-        X_test_vec = self.vectorizer.transform(X_test)
+            records = build_dataset()
 
-        self.classifier = LogisticRegression(class_weight='balanced')
-        self.classifier.fit(X_train_vec, y_train)
+        texts = [record["clause_text"] for record in records]
+        labels = [int(record["is_loophole"]) for record in records]
 
-        # Evaluate strictly on unseen test set
-        y_pred = self.classifier.predict(X_test_vec)
-        f1 = f1_score(y_test, y_pred, zero_division=0)
-        
-        print(f"📊 Model Evaluation on Unseen Test Partition (Strict Split):")
-        print(f"• Test F1-Score: {f1:.2f}")
-        print(classification_report(y_test, y_pred, zero_division=0))
+        self.vectorizer = build_vectorizer()
+        features = self.vectorizer.fit_transform(texts)
+        self.classifier = build_classifier()
+        self.classifier.fit(features, labels)
 
-        # Save model bundle
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
-        with open(self.model_path, "wb") as f:
-            pickle.dump({
-                "vectorizer": self.vectorizer,
-                "classifier": self.classifier
-            }, f)
-        print(f"💾 Model saved successfully to {self.model_path}")
+        with open(self.model_path, "wb") as handle:
+            pickle.dump({"vectorizer": self.vectorizer, "classifier": self.classifier}, handle)
+
+        logger.info("Risk classifier trained on %d labelled clauses", len(records))
+        return self
 
     def predict_risk(self, clause_text: str) -> dict:
-        vec = self.vectorizer.transform([clause_text])
-        prob = float(self.classifier.predict_proba(vec)[0][1])
-        
-        if prob > 0.6:
-            cat = "High Risk"
-        elif prob > 0.3:
-            cat = "Medium Risk"
+        """Score one clause.
+
+        Returns the probability the clause carries an exploitable gap, a
+        three-band label for display, and the gate decision the orchestrator uses.
+        """
+        features = self.vectorizer.transform([clause_text])
+        probability = float(self.classifier.predict_proba(features)[0][1])
+
+        if probability > HIGH_RISK_THRESHOLD:
+            category = "High Risk"
+        elif probability > RED_TEAM_THRESHOLD:
+            category = "Medium Risk"
         else:
-            cat = "Low Risk"
-            
+            category = "Low Risk"
+
         return {
-            "risk_score": round(prob, 4),
-            "category": cat,
-            "requires_red_teaming": bool(prob > 0.3)
+            "risk_score": round(probability, 4),
+            "category": category,
+            "requires_red_teaming": bool(probability > RED_TEAM_THRESHOLD),
         }
 
-if __name__ == "__main__":
-    clf = PolicyRiskClassifier()
-    sample = "The lender shall levy a penal charge of 2% per month on delayed repayments."
-    print(clf.predict_risk(sample))
 
-    # def predict_risk(self, clause_text: str) -> dict:
-    #     """
-    #     Transforms text using the vectorizer and predicts risk using the classifier.
-    #     """
-    #     if not self.vectorizer or not self.classifier:
-    #         raise ValueError("Classifier components are not initialized.")
-            
-    #     clause_vec = self.vectorizer.transform([clause_text])
-    #     probability = float(self.classifier.predict_proba(clause_vec)[0][1])
-    #     prediction = int(self.classifier.predict(clause_vec)[0])
-        
-    #     category = "High Risk" if probability > 0.6 else ("Medium Risk" if probability > 0.3 else "Low Risk")
-        
-    #     return {
-    #         "risk_score": round(probability, 4),
-    #         "category": category,
-    #         "requires_red_teaming": bool(prediction == 1 or probability > 0.3)
-    #     }
-  
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    classifier = PolicyRiskClassifier()
+    sample = "The lender shall levy a penal charge of 2% per month on delayed repayments."
+    print(classifier.predict_risk(sample))

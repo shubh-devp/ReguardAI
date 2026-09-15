@@ -1,10 +1,13 @@
 import json
+import logging
+
 from src.models.risk_classifier import PolicyRiskClassifier
 from src.agents.challenger import generate_adversarial_attack
 from src.agents.auditor import RegulatoryAuditor
 from src.agents.verifier import verify_evidence
 from src.agents.remediator import remediate_clause
 from src.agents.retest import ReTestAgent
+from src.agents.llm import as_bool
 from src.database.sql_manager import (
     init_db,
     insert_policy,
@@ -12,6 +15,9 @@ from src.database.sql_manager import (
     insert_audit_finding,
     insert_remediation_result
 )
+
+logger = logging.getLogger(__name__)
+
 
 class ReguardOrchestrator:
     def __init__(self):
@@ -48,16 +54,27 @@ class ReguardOrchestrator:
 
         # Evidence Verifier Agent (Fail-Closed: default to False)
         verification = verify_evidence(clause_text, audit, retrieved_passage)
-        is_supported = bool(verification.get("is_supported", False))
-        
+        is_supported = as_bool(verification.get("is_supported", False))
+        confidence = verification.get("confidence_score")
+        evidence = audit.get("evidence") or {}
+
+        if isinstance(confidence, (int, float)) and confidence < 0.5:
+            # A low-confidence verification is not strong enough to justify an
+            # automatic rewrite, so it is reported rather than acted on.
+            logger.warning(
+                "Verifier confidence %.2f is below the 0.5 threshold for clause %r",
+                confidence, clause_text[:60],
+            )
+
         finding_id = insert_audit_finding(
             policy_id=policy_id,
             clause_id=clause_id,
             attack_scenario=attack.get("attack_scenario", ""),
             matched_rbi_passage_id=str(audit.get("matched_rbi_passage_id", "")),
-            violation_detected=bool(audit.get("violation_confirmed", False)) and is_supported,
+            violation_detected=as_bool(audit.get("violation_confirmed", False)) and is_supported,
             explanation=f"{audit.get('explanation', '')} [Verification: {verification.get('verification_rationale', '')}]",
-            severity=audit.get("severity", "Medium")
+            severity=audit.get("severity", "Medium"),
+            evidence=evidence,
         )
 
         # Remediation & Re-Test ASR Loop

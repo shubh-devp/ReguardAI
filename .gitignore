@@ -21,8 +21,15 @@ data/processed/*.pkl
 *.db
 *.sqlite
 
-# data/chroma_db is committed on purpose: it ships the prebuilt vector index so a
-# deployment loads it instead of re-embedding the whole corpus on first use.
+# NOTE: the whole data/ directory is currently untracked, which includes
+# data/corpus (the retrieval corpus), data/models (the ONNX encoder) and
+# data/chroma_db (the prebuilt vector index).
+#
+# A deployment built from this repository therefore has no corpus and no index.
+# The retriever logs "Retriever unavailable; audits will use a fixed passage" and
+# every finding falls back to one hardcoded sentence. Re-add the subset the app
+# needs (corpus JSON + ONNX model + chroma_db) before deploying for retrieval to
+# work, or fetch it during the build.
 
 
 node_modules/

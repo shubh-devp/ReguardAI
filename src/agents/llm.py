@@ -42,6 +42,21 @@ def get_client() -> genai.Client:
     return _client
 
 
+def as_bool(value) -> bool:
+    """Read a boolean out of a model response without being fooled by strings.
+
+    Agent replies are parsed JSON, not a validated schema, so a model answering
+    with the string "false" is normal. ``bool("false")`` is True in Python, which
+    would turn a "not supported" verdict into a confirmation - the opposite of
+    failing closed.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    return bool(value)
+
+
 def _strip_code_fence(text: str) -> str:
     """Models sometimes wrap JSON in ```json ... ``` despite being asked not to."""
     text = text.strip()

@@ -110,13 +110,14 @@ LLM
                              │
               ┌──────────────┼──────────────┐
               ▼              ▼              ▼
-        Disclosure       Disbursal      Cooling-off
-         Agent            Agent           Agent
+         Challenger      Auditor      Remediation
+          (attack)      (evidence)      (patch)
               │              │              │
               └──────────────┼──────────────┘
                              ▼
                   ┌────────────────────┐
-                  │ Risk Aggregation    │
+                  │ Evidence Verifier  │
+                  │   (fail-closed)    │
                   └──────────┬─────────┘
                              ▼
                   ┌────────────────────┐
@@ -181,25 +182,36 @@ Semantically related regulatory requirements
 
 🤖 Multi-Agent Compliance Red Team
 
-Reguard AI uses multiple specialized agents instead of relying on a single compliance evaluator.
+Reguard AI runs a chain of specialised agents instead of relying on a single
+compliance evaluator. Each agent has one job, and its output is checked by the
+stage after it.
 
-Each agent focuses on a different attack surface.
+                    Policy Clause
+                          │
+                ┌─────────┴──────────┐
+                ▼                    ▼
+        Risk Triage (ML)      Challenger agent
+        TF-IDF + LogReg       generates an attack
+                │                    │
+                └─────────┬──────────┘
+                          ▼
+                  Auditor agent  ──►  Hybrid RAG evidence
+                          │
+                          ▼
+                  Evidence Verifier  ──►  fail-closed check
+                          │
+                          ▼
+                  Remediation agent  ──►  patched clause
+                          │
+                          ▼
+                  Re-Test agent  ──►  ASR before / after
 
-Example:
+Honest scope note: the Challenger currently produces **one** attack scenario,
+and the Re-Test agent replays that single scenario as a three-probe set. Genuinely
+independent attackers per compliance surface (disclosure, disbursal, cooling-off,
+penal charges), with agreement tracking between them, is designed but not built.
+See "Future Work".
 
-                    Policy
-                      │
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
- Disclosure       Disbursal      Cooling-off
-   Agent            Agent          Agent
-        │             │             │
-        ▼             ▼             ▼
-    Findings       Findings       Findings
-        │             │             │
-        └─────────────┼─────────────┘
-                      ▼
-              Risk Aggregator
 
 
 
@@ -363,7 +375,7 @@ Remediation acceptance rate
                                   │ HTTP / REST
                                   ▼
                          ┌──────────────────┐
-                         │ FastAPI Backend  │
+                         │ Flask Backend    │
                          └────────┬─────────┘
                                   │
                    ┌──────────────┼──────────────┐
@@ -452,7 +464,7 @@ REST API integration
 
 Backend:
 Python
-FastAPI
+Flask
 REST APIs
 AI / ML
 Natural Language Processing
@@ -481,7 +493,7 @@ Metadata
 Development
 Git
 GitHub
-Docker
+pytest
 Environment variables
 
 
@@ -502,12 +514,11 @@ reguard-ai/
 ├── src/
 │   ├── agents/
 │   │   ├── llm.py                  # Shared Gemini client, retries, JSON parsing
-│   │   ├── analyst.py              # Clause structural parser (standalone)
 │   │   ├── challenger.py           # Adversarial red-team attacker agent
 │   │   ├── auditor.py              # Regulatory compliance auditor agent
 │   │   ├── verifier.py             # Evidence support validator (fail-closed)
 │   │   ├── remediator.py           # Policy patch generator agent
-│   │   ├── retest.py               # Deterministic ASR re-test agent
+│   │   ├── retest.py               # ASR re-test agent
 │   │   └── orchestrator.py         # End-to-end pipeline orchestrator loop
 │   ├── database/
 │   │   └── sql_manager.py          # SQLite schema, init, and insert operations
@@ -516,13 +527,16 @@ reguard-ai/
 │   ├── models/
 │   │   └── risk_classifier.py      # TF-IDF + Logistic Regression triage gatekeeper
 │   ├── retrieval/
-│   │   └── hybrid_retriever.py     # BM25 + ChromaDB ensemble retriever
+│   │   ├── hybrid_retriever.py     # BM25 + ChromaDB ensemble retriever
+│   │   └── provenance.py           # Joins a chunk to its reviewed RBI passage
 │   ├── evaluation/
-│   │   ├── evaluate.py             # Classifier / retrieval scoring script
-│   │   └── evaluate_pipeline.py    # Benchmark harness for the pipeline
+│   │   ├── benchmark.py            # Loads the labelled benchmark and its gold evidence
+│   │   ├── evaluate_ml.py          # Cross-validated classifier comparison
+│   │   └── evaluate_retrieval.py   # Recall@K / MRR / nDCG across retrieval strategies
 │   ├── cli.py                      # Batch file auditing command-line interface
 │   └── api/
 │       └── app.py                  # Flask API: POST /api/audit, GET /api/health
+├── tests/                          # pytest suite: provenance, retrieval, ML, agents, API
 ├── Procfile                        # Start command used by Render
 ├── .env.example                    # Template for the environment variables
 ├── requirements.txt                # Python backend dependencies

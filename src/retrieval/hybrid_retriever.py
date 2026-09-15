@@ -14,6 +14,8 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_chroma import Chroma
 
+from src.retrieval import provenance
+
 CORPUS_PATH = "data/corpus/parsed_corpus_chunks.json"
 PERSIST_DIRECTORY = "data/chroma_db"
 COLLECTION_NAME = "rbi_corpus"
@@ -21,6 +23,16 @@ FINGERPRINT_FILE = "corpus_fingerprint.json"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 EMBEDDING_BACKEND = "onnx"
 ONNX_MODEL_DIR = Path(__file__).resolve().parents[2] / "data" / "models" / "onnx_models" / EMBEDDING_MODEL
+
+# Chunk metadata is derived from the corpus file, so it has to be versioned
+# separately: changing how it is built must invalidate the saved index too.
+CHUNK_SCHEMA_VERSION = 2
+
+# The index holds both the RBI documents and the lender policy documents. Only
+# the former count as regulatory evidence.
+REGULATORY_KIND = "regulatory_pdf"
+
+DEFAULT_K = 4
 
 
 def load_ensemble_retriever():
@@ -88,6 +100,24 @@ class OnnxMiniLmEmbeddings(Embeddings):
         return [float(value) for value in self._encode([text])[0]]
 
 
+def _build_metadata(item):
+    """Build the metadata a chunk is stored and cited with.
+
+    The corpus file only carries a filename plus a page or paragraph number. The
+    chunk id and the curated passage fields are added here so that a finding can
+    cite an actual passage rather than just a filename.
+    """
+    metadata = dict(item["metadata"])
+    metadata["chunk_id"] = item["chunk_id"]
+
+    if metadata.get("type") == REGULATORY_KIND:
+        # Every value here is a scalar or a list of strings: ChromaDB refuses to
+        # store nested objects, so the block is written flat.
+        metadata.update(provenance.describe(metadata.get("source"), metadata.get("page")))
+
+    return metadata
+
+
 def load_chunks_from_json(json_path=CORPUS_PATH):
     #loading the parsed corpus chunks generated from Stage 1 parser.
     if not os.path.exists(json_path):
@@ -100,12 +130,25 @@ def load_chunks_from_json(json_path=CORPUS_PATH):
     documents = [
         Document(
             page_content=item["page_content"],
-            metadata=item["metadata"]
+            metadata=_build_metadata(item)
         )
         for item in data
     ]
     print(f"-> Loaded {len(documents)} documents into memory.")
     return documents
+
+
+def is_regulatory(document):
+    """True for an RBI document chunk, false for a lender policy chunk."""
+    return document.metadata.get("type") == REGULATORY_KIND
+
+
+def select_corpus(documents, regulatory_only=True):
+    """Restrict a corpus to regulatory documents when asked."""
+    if not regulatory_only:
+        return documents
+    return [document for document in documents if is_regulatory(document)]
+
 
 
 #One shared embedding model and one shared retriever per persist directory. Both
@@ -145,10 +188,12 @@ def _saved_index_is_current(corpus_path, persist_directory):
         with open(marker_path, "r", encoding="utf-8") as handle:
             saved = json.load(handle)
         # The backend is part of the check because vectors written by one encoder
-        # cannot be searched with queries from another.
+        # cannot be searched with queries from another. The schema version covers
+        # the chunk metadata, which is stored alongside the vectors.
         return (
             saved.get("corpus_sha256") == _corpus_fingerprint(corpus_path)
             and saved.get("embedding_backend") == EMBEDDING_BACKEND
+            and saved.get("chunk_schema_version") == CHUNK_SCHEMA_VERSION
         )
     except (OSError, ValueError):
         return False
@@ -162,6 +207,7 @@ def _write_fingerprint(corpus_path, persist_directory):
             {
                 "corpus_sha256": _corpus_fingerprint(corpus_path),
                 "embedding_backend": EMBEDDING_BACKEND,
+                "chunk_schema_version": CHUNK_SCHEMA_VERSION,
             },
             handle,
         )
@@ -195,32 +241,71 @@ def _load_or_build_vectorstore(documents, embeddings, corpus_path, persist_direc
     return store
 
 
-def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY):
-    #hybrid search engine combining BM25 (exact keyword matching) 
-    #and  dense vector search
-    #Callers that pass the same corpus get the same retriever back, so only one
-    #BM25 index and one vector store are held in memory.
-    if persist_directory in _retrievers:
-        return _retrievers[persist_directory]
+def build_keyword_retriever(documents, regulatory_only=True, k=DEFAULT_K):
+    """BM25 keyword search. This is the lexical half of the hybrid retriever."""
+    corpus = select_corpus(documents, regulatory_only)
+    print(f"Initializing BM25 keyword index over {len(corpus)} chunks...")
+    retriever = BM25Retriever.from_documents(corpus)
+    retriever.k = k
+    return retriever
 
-    print("Initializing BM25 keyword index...")
-    bm25_retriever = BM25Retriever.from_documents(documents)
-    bm25_retriever.k = 4
 
-    print(f"Loading local SentenceTransformer model ({EMBEDDING_MODEL})...")
+def build_dense_retriever(documents, persist_directory=PERSIST_DIRECTORY, regulatory_only=True, k=DEFAULT_K):
+    """Vector search. This is the semantic half of the hybrid retriever."""
     embeddings = build_embeddings()
-
     vectorstore = _load_or_build_vectorstore(documents, embeddings, CORPUS_PATH, persist_directory)
-    chroma_retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-    print("Blending retrievers into a secure Hybrid Ensemble...")
-    ensemble_retriever = EnsembleRetriever(
-        retrievers=[bm25_retriever, chroma_retriever],
-        weights=[0.4, 0.6]  # 40% keyword precision, 60% semantic similarity
+    search_kwargs = {"k": k}
+    if regulatory_only:
+        #Chroma applies this as a "where" clause, so a lender policy chunk can
+        #never be returned as if it were RBI regulation.
+        search_kwargs["filter"] = {"type": REGULATORY_KIND}
+
+    return vectorstore.as_retriever(search_kwargs=search_kwargs)
+
+
+def build_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY, regulatory_only=True, k=DEFAULT_K):
+    """Blend keyword and vector search with weighted reciprocal rank fusion."""
+    keyword = build_keyword_retriever(documents, regulatory_only=regulatory_only, k=k)
+    dense = build_dense_retriever(
+        documents, persist_directory=persist_directory, regulatory_only=regulatory_only, k=k
     )
+    return EnsembleRetriever(retrievers=[keyword, dense], weights=[0.4, 0.6])
 
-    _retrievers[persist_directory] = ensemble_retriever
-    return ensemble_retriever
+
+def build_retriever(documents, strategy="hybrid", persist_directory=PERSIST_DIRECTORY,
+                    regulatory_only=True, k=DEFAULT_K):
+    """Build one named retrieval strategy.
+
+    The retrieval evaluation uses this to score BM25, dense search and the hybrid
+    blend against each other on the same corpus with the same ground truth.
+    """
+    builders = {
+        "bm25": build_keyword_retriever,
+        "dense": build_dense_retriever,
+        "hybrid": build_hybrid_retriever,
+    }
+    if strategy not in builders:
+        raise ValueError(f"Unknown retrieval strategy {strategy!r}. Choose from {sorted(builders)}")
+
+    if strategy == "bm25":
+        return builders[strategy](documents, regulatory_only=regulatory_only, k=k)
+    return builders[strategy](documents, persist_directory=persist_directory,
+                              regulatory_only=regulatory_only, k=k)
+
+
+def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY):
+    """The retriever the live pipeline uses.
+
+    Cached per directory: both the auditor and the re-test agent ask for one, and
+    building it twice costs a second copy of the model and the BM25 index.
+    """
+    key = (persist_directory, "hybrid", True)
+    if key not in _retrievers:
+        print("Blending retrievers into the hybrid ensemble...")
+        _retrievers[key] = build_hybrid_retriever(documents, persist_directory=persist_directory)
+    return _retrievers[key]
+
 
 
 if __name__ == "__main__":

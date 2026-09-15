@@ -87,15 +87,30 @@ def validate(body):
     if not isinstance(body, dict):
         return None, "Request body must be a JSON object."
 
-    clause_text = (body.get("clause_text") or "").strip()
-    if not clause_text:
+    clause_text = body.get("clause_text")
+    if clause_text is None or (isinstance(clause_text, str) and not clause_text.strip()):
         return None, "clause_text is required."
+    if not isinstance(clause_text, str):
+        # Without this, a number or list would reach .strip() and raise, turning a
+        # bad request into a 500 with an HTML body instead of a JSON error.
+        return None, "clause_text must be a string."
+
+    clause_text = clause_text.strip()
     if len(clause_text) < MIN_CLAUSE_CHARS:
         return None, f"clause_text must be at least {MIN_CLAUSE_CHARS} characters."
     if len(clause_text) > MAX_CLAUSE_CHARS:
         return None, f"clause_text must be at most {MAX_CLAUSE_CHARS} characters."
 
     return clause_text, None
+
+
+def _optional_string(body, key, fallback):
+    """Read an optional string field, ignoring a wrong-typed value."""
+    value = body.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return fallback
+
 
 
 @app.route("/", methods=["GET"])
@@ -126,8 +141,8 @@ def run_audit():
         logger.warning("Rejected audit request: %s", error)
         return jsonify({"error": error}), 400
 
-    policy_name = (body.get("policy_name") or "policy.txt").strip()
-    full_text = (body.get("full_text") or clause_text).strip()
+    policy_name = _optional_string(body, "policy_name", "policy.txt")
+    full_text = _optional_string(body, "full_text", clause_text)
 
     try:
         result = get_orchestrator().run(policy_name, full_text, clause_text)

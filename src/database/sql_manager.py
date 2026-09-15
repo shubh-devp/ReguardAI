@@ -20,73 +20,114 @@ def get_connection():
     # of raising "database is locked" when two requests arrive together.
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
+    # Foreign keys are declared below but SQLite leaves them unenforced unless
+    # this is set on every connection.
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS leaves an
+# existing table untouched, so these are applied separately for databases that
+# were created before the columns existed.
+ADDED_FINDING_COLUMNS = {
+    "evidence_citation": "TEXT",
+    "evidence_passage_id": "TEXT",
+    "evidence_section": "TEXT",
+    "evidence_status": "TEXT",
+    "retrieved_passage": "TEXT",
+}
+
+
+def _ensure_columns(cursor, table, columns):
+    """Add any missing columns to an existing table."""
+    existing = {row["name"] for row in cursor.execute(f"PRAGMA table_info({table})")}
+    for name, sql_type in columns.items():
+        if name not in existing:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
 
 
 def init_db():
     #Initializes the database schema with tables for policies, clauses, findings, and remediation
     conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    #1 . Policies Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS policies (
-            policy_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            full_text TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
+        #1 . Policies Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS policies (
+                policy_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                full_text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
 
-    # 2. Policy Clauses Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS clauses (
-            clause_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            policy_id INTEGER,
-            clause_text TEXT NOT NULL,
-            actor TEXT,
-            action TEXT,
-            limit_val TEXT,
-            condition TEXT,
-            risk_score REAL,
-            FOREIGN KEY (policy_id) REFERENCES policies (policy_id)
-        )
-    """)
+        # 2. Policy Clauses Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS clauses (
+                clause_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                policy_id INTEGER,
+                clause_text TEXT NOT NULL,
+                actor TEXT,
+                action TEXT,
+                limit_val TEXT,
+                condition TEXT,
+                risk_score REAL,
+                FOREIGN KEY (policy_id) REFERENCES policies (policy_id)
+            )
+        """)
 
-    # 3. Audit Findings (Challenger & Auditor Results) Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS audit_findings (
-            finding_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            policy_id INTEGER,
-            clause_id INTEGER,
-            attack_scenario TEXT,
-            matched_rbi_passage_id TEXT,
-            violation_detected BOOLEAN,
-            explanation TEXT,
-            severity TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (policy_id) REFERENCES policies (policy_id),
-            FOREIGN KEY (clause_id) REFERENCES clauses (clause_id)
-        )
-    """)
+        # 3. Audit Findings (Challenger & Auditor Results) Table.
+        # The evidence columns record exactly which RBI passage justified the
+        # finding, so a stored audit can be reproduced later.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_findings (
+                finding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                policy_id INTEGER,
+                clause_id INTEGER,
+                attack_scenario TEXT,
+                matched_rbi_passage_id TEXT,
+                evidence_citation TEXT,
+                evidence_passage_id TEXT,
+                evidence_section TEXT,
+                evidence_status TEXT,
+                retrieved_passage TEXT,
+                violation_detected BOOLEAN,
+                explanation TEXT,
+                severity TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (policy_id) REFERENCES policies (policy_id),
+                FOREIGN KEY (clause_id) REFERENCES clauses (clause_id)
+            )
+        """)
+        _ensure_columns(cursor, "audit_findings", ADDED_FINDING_COLUMNS)
 
+        # 4. Remediation & Re-Test Results Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS remediation_results (
+                remediation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                finding_id INTEGER,
+                patched_clause_text TEXT,
+                asr_before REAL,
+                asr_after REAL,
+                status TEXT,
+                FOREIGN KEY (finding_id) REFERENCES audit_findings (finding_id)
+            )
+        """)
 
-    # 4. Remediation & Re-Test Results Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS remediation_results (
-            remediation_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            finding_id INTEGER,
-            patched_clause_text TEXT,
-            asr_before REAL,
-            asr_after REAL,
-            status TEXT,
-            FOREIGN KEY (finding_id) REFERENCES audit_findings (finding_id)
-        )
-    """)
+        # Indexes on the foreign keys: every audit trail query joins on these.
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS idx_clauses_policy ON clauses (policy_id)",
+            "CREATE INDEX IF NOT EXISTS idx_findings_policy ON audit_findings (policy_id)",
+            "CREATE INDEX IF NOT EXISTS idx_findings_clause ON audit_findings (clause_id)",
+            "CREATE INDEX IF NOT EXISTS idx_remediation_finding ON remediation_results (finding_id)",
+        ):
+            cursor.execute(statement)
 
+        conn.commit()
+    finally:
+        conn.close()
 
-    conn.commit()
-    conn.close()
     print(f"Database initialized successfully at '{DB_PATH}'")
 
 
@@ -120,14 +161,37 @@ def insert_clause(policy_id: int, clause_text: str, actor: str, action: str, lim
     )
 
 
-def insert_audit_finding(policy_id: int, clause_id: int, attack_scenario: str, matched_rbi_passage_id: str, violation_detected: bool, explanation: str, severity: str) -> int:
-    """Inserts an adversarial red-team audit finding record, returning finding_id."""
+def insert_audit_finding(policy_id: int, clause_id: int, attack_scenario: str, matched_rbi_passage_id: str, violation_detected: bool, explanation: str, severity: str, evidence: dict = None) -> int:
+    """Inserts an adversarial red-team audit finding record, returning finding_id.
+
+    The evidence block records the citation the finding rests on, so a stored
+    audit can be traced back to the RBI passage instead of just a filename.
+    """
+    evidence = evidence or {}
     return _insert(
         """
-        INSERT INTO audit_findings (policy_id, clause_id, attack_scenario, matched_rbi_passage_id, violation_detected, explanation, severity, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO audit_findings (
+            policy_id, clause_id, attack_scenario, matched_rbi_passage_id,
+            evidence_citation, evidence_passage_id, evidence_section, evidence_status,
+            retrieved_passage, violation_detected, explanation, severity, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (policy_id, clause_id, attack_scenario, matched_rbi_passage_id, violation_detected, explanation, severity, datetime.now(timezone.utc).isoformat())
+        (
+            policy_id,
+            clause_id,
+            attack_scenario,
+            matched_rbi_passage_id,
+            evidence.get("citation"),
+            evidence.get("passage_id"),
+            evidence.get("section"),
+            evidence.get("status"),
+            (evidence.get("passage_text") or "")[:5000],
+            violation_detected,
+            explanation,
+            severity,
+            datetime.now(timezone.utc).isoformat(),
+        )
     )
 
 

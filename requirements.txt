@@ -1,3 +1,6 @@
+# Runtime dependencies only. Everything listed here is imported somewhere under
+# src/ or tests/; anything that was carried "just in case" has been removed.
+
 # Embeddings run on ONNX Runtime, not PyTorch.
 #
 # torch, transformers and sentence-transformers together pulled in the whole CUDA
@@ -7,25 +10,26 @@
 # onnxruntime instead.
 onnxruntime>=1.17.0
 
-fastapi>=0.100.0
-uvicorn>=0.22.0
-pydantic>=2.0.0
-langgraph>=0.1.0
-langchain>=0.2.0
-langchain-core>=0.2.0
-langchain-google-genai>=1.0.0
+flask>=2.0.0
+flask-cors>=4.0.0
 google-genai>=1.0.0
-faiss-cpu>=1.7.4
-rank_bm25>=0.2.2
-PyPDF2>=3.0.0
-python-docx>=1.1.0
-pandas>=2.0.0
-pytest>=7.0.0
-scikit-learn>=1.3.0
+python-dotenv>=1.0.0
+
+# Retrieval
+chromadb>=0.4.0
+langchain-core>=0.2.0
 langchain-community>=0.2.0
 langchain-chroma>=0.1.0
 langchain-classic>=0.1.0
-chromadb>=0.4.0
-python-dotenv>=1.0.0
-flask>=2.0.0
-flask-cors>=4.0.0
+rank_bm25>=0.2.2
+
+# Risk classifier and evaluation metrics
+scikit-learn>=1.3.0
+
+# Corpus ingestion (data ingestion, run manually)
+pypdf>=4.0.0
+python-docx>=1.1.0
+langchain-text-splitters>=0.2.0
+
+# Tests
+pytest>=7.0.0
