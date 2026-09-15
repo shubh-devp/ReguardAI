@@ -1,0 +1,348 @@
+{
+  "benchmark_id": "reguard-rbi-digital-lending-benchmark-v4",
+  "domain": "RBI Digital Lending / Fair Lending (India)",
+  "description": "Single-domain benchmark for Reguard AI, locked to Fintech & Digital Lending (RBI/Financial Compliance). Each record is a standalone digital-lending policy clause drawn from a fictional company's digital lending policy, labeled for whether it constitutes an exploitable regulatory gap against the Reserve Bank of India (Digital Lending) Directions, 2025 and the Fair Lending Practice - Penal Charges circular, 2023, with ground-truth evidence linked to regulatory_corpus.json passage_ids, split for classifier and retrieval evaluation.",
+  "label_balance": {
+    "loophole": 12,
+    "compliant": 12,
+    "total": 24
+  },
+  "split_sizes": {
+    "train": 16,
+    "dev": 5,
+    "test": 3
+  },
+  "usage_notes": {
+    "risk_classifier": "Use is_loophole as the binary label for the clause risk classifier baseline.",
+    "retrieval_eval": "Use mapped_passage_ids against regulatory_corpus.json passage_id to compute Recall@K / MRR for the Hybrid Retrieval stage.",
+    "violation_detection": "Use violation_type as the free-text target for the Regulatory Auditor stage; compliant rows have violation_type=null and should not be flagged.",
+    "evidence_grounding": "evidence_summary is the gold rationale connecting clause_text to the cited passage(s); use for Evidence Verifier supported-claim scoring.",
+    "asr_note": "For Attack Success Rate testing: treat each is_loophole=true clause as a known exploitable weakness; run Challenger+Remediation, patch, and re-run the Auditor to measure ASR_before/ASR_after."
+  },
+  "clauses": [
+    {
+      "clause_id": "C001",
+      "source_doc": "QuickLend_DigitalLending_Policy_v1",
+      "topic": "APR/KFS disclosure",
+      "clause_text": "The Annual Percentage Rate shown in the Key Fact Statement reflects interest charges only; processing fees, documentation charges, and any bundled insurance premium are itemised separately elsewhere in the sanction letter and are not included in the headline APR figure.",
+      "is_loophole": true,
+      "violation_type": "APR disclosure excludes mandatory fees and bundled insurance from the all-inclusive cost of credit shown to the borrower",
+      "mapped_passage_ids": [
+        "RBI-DL-0004"
+      ],
+      "evidence_summary": "APR under the Directions is defined by reference to the KFS circular's all-inclusive cost-of-credit standard; presenting an APR that strips out mandatory fees and bundled insurance understates the true cost of borrowing and defeats loan-offer comparability.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C002",
+      "source_doc": "QuickLend_DigitalLending_Policy_v1",
+      "topic": "APR/KFS disclosure",
+      "clause_text": "The Annual Percentage Rate disclosed in the Key Fact Statement is computed as an all-inclusive cost of credit, incorporating interest, processing fees, documentation charges, and any mandatory insurance premium bundled with the loan, in line with the Company's KFS format.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0004"
+      ],
+      "evidence_summary": "Matches the requirement that the APR figure disclosed to the borrower be computed on an all-inclusive cost-of-credit basis rather than interest alone.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C003",
+      "source_doc": "QuickLend_DigitalLending_Policy_v1",
+      "topic": "Cooling-off period",
+      "clause_text": "Borrowers may exit a digital loan within the cooling-off window by repaying the principal, proportionate interest, and a cooling-off exit charge equal to 2% of the sanctioned loan amount, which is separate from and in addition to the one-time processing fee retained by the Company.",
+      "is_loophole": true,
+      "violation_type": "An additional 'cooling-off exit charge' functions as an undisclosed penalty on cooling-off exit, beyond the one permissible one-time processing fee",
+      "mapped_passage_ids": [
+        "RBI-DL-0019",
+        "RBI-DL-0020"
+      ],
+      "evidence_summary": "The cooling-off right entitles the borrower to exit by paying principal and proportionate interest without any penalty; the Directions permit retention of only a reasonable one-time processing fee, so a separate 2% exit charge is an impermissible penalty layered on top.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C004",
+      "source_doc": "QuickLend_DigitalLending_Policy_v1",
+      "topic": "Cooling-off period",
+      "clause_text": "During the cooling-off period fixed by the Board (not less than one day from disbursal), the borrower may exit the loan by paying only the principal and proportionate interest, without any penalty; the Company may retain only a reasonable one-time processing fee, disclosed upfront in the Key Fact Statement.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0019",
+        "RBI-DL-0020"
+      ],
+      "evidence_summary": "Matches the requirement of a penalty-free exit during the cooling-off period with only a reasonable, KFS-disclosed one-time processing fee retained.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C005",
+      "source_doc": "RapidCredit_DigitalLending_Policy_v1",
+      "topic": "Direct disbursal",
+      "clause_text": "To improve customer experience, loan proceeds may first be credited to a facilitation account maintained by the Company's empanelled Lending Service Provider, which then transfers the net amount to the borrower's bank account within the same business day, net of the LSP's facilitation charge.",
+      "is_loophole": true,
+      "violation_type": "Loan proceeds are routed through an LSP pass-through/facilitation account before reaching the borrower, and an LSP facilitation charge is netted off the disbursed amount instead of being paid directly by the RE",
+      "mapped_passage_ids": [
+        "RBI-DL-0016",
+        "RBI-DL-0017"
+      ],
+      "evidence_summary": "Disbursal must always be made into the borrower's own bank account and must never be made to a third-party account including that of the LSP, with LSP fees payable directly by the RE and not deducted from what the borrower receives; routing funds through an LSP facilitation account and netting off a charge breaches both requirements.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C006",
+      "source_doc": "RapidCredit_DigitalLending_Policy_v1",
+      "topic": "Direct disbursal",
+      "clause_text": "Disbursement of every loan is made directly into the borrower's own bank account; the Company does not route any disbursal through a pass-through, pool, or facilitation account of the Lending Service Provider or any other third party, except where a statutory or regulatory mandate specifically permits otherwise.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0016",
+        "RBI-DL-0017"
+      ],
+      "evidence_summary": "Matches the requirement that disbursal be made directly into the borrower's bank account without any third-party pass-through or pool account, absent a specific statutory exception.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C007",
+      "source_doc": "RapidCredit_DigitalLending_Policy_v1",
+      "topic": "LSP due diligence/governance",
+      "clause_text": "Once a Lending Service Provider agreement is executed, the Company treats the LSP as an independent contractor responsible for its own regulatory compliance, data-privacy practices, and conduct with borrowers; the Company's role is limited to remitting the agreed commission and is not required to intervene in the LSP's day-to-day origination practices.",
+      "is_loophole": true,
+      "violation_type": "Policy attempts to outsource regulatory responsibility to the LSP and disclaims the RE's non-delegable liability for the LSP's acts and omissions",
+      "mapped_passage_ids": [
+        "RBI-DL-0007",
+        "RBI-DL-0009"
+      ],
+      "evidence_summary": "An outsourcing agreement with an LSP can never dilute or absolve the RE of its statutory or regulatory obligations, and the RE remains fully responsible and liable for all acts and omissions of the LSP; treating the LSP as solely responsible for compliance and conduct contradicts this non-delegable duty.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C008",
+      "source_doc": "RapidCredit_DigitalLending_Policy_v1",
+      "topic": "LSP due diligence/governance",
+      "clause_text": "The Company conducts enhanced due diligence on an LSP's technical capability, data-privacy safeguards, and conduct history before onboarding, carries out periodic reviews of the LSP's performance against the contractual agreement, and remains fully responsible and liable to the borrower and the regulator for all acts and omissions of the LSP, notwithstanding the outsourcing arrangement.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0007",
+        "RBI-DL-0009"
+      ],
+      "evidence_summary": "Matches the requirement of enhanced pre-engagement due diligence, periodic review of LSP conduct, and the RE's continuing full responsibility and liability for the LSP's acts and omissions.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C009",
+      "source_doc": "PixelPay_DigitalLending_Policy_v1",
+      "topic": "DLA/LSP disclosure",
+      "clause_text": "Where the Company's empanelled LSP operates a multi-lender marketplace, loan offers from the Company are displayed with a 'Recommended Partner' badge and placed above other matching lenders' offers on the borrower's screen, reflecting the Company's higher commercial priority tier with the LSP.",
+      "is_loophole": true,
+      "violation_type": "A 'Recommended Partner' badge and priority placement funded by commercial arrangement constitutes promotion of a particular RE's product through a non-disclosed ranking metric, contrary to the unbiased-display requirement",
+      "mapped_passage_ids": [
+        "RBI-DL-0010"
+      ],
+      "evidence_summary": "The content displayed by an LSP across multiple lenders must be unbiased and objective and must not directly or indirectly promote a particular RE's product; ranking is permissible only on a publicly pre-disclosed metric, so a commercially-driven 'Recommended Partner' badge without such disclosure is exactly the promotion the Directions prohibit.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C010",
+      "source_doc": "PixelPay_DigitalLending_Policy_v1",
+      "topic": "DLA/LSP disclosure",
+      "clause_text": "Where the Company's empanelled LSP operates a multi-lender marketplace, the digital view of matching loan offers presented to the borrower is unbiased and objective, is not arranged to directly or indirectly promote the Company's offer over other matching lenders', and any ranking applied is based solely on a metric that the LSP has publicly pre-disclosed.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0010"
+      ],
+      "evidence_summary": "Matches the requirement that the LSP's multi-lender digital view remain unbiased, not promote any particular RE, and rank offers only on a publicly pre-disclosed metric.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C011",
+      "source_doc": "PixelPay_DigitalLending_Policy_v1",
+      "topic": "Credit line enhancement",
+      "clause_text": "Based on the borrower's repayment behaviour over the first three EMIs, the Company's risk engine may proactively pre-approve and activate an increased credit limit on the borrower's digital credit line, which the borrower can start drawing immediately; the borrower is notified of the enhanced limit by an in-app banner after activation.",
+      "is_loophole": true,
+      "violation_type": "Credit limit is increased and activated automatically on the basis of repayment behaviour, without any explicit request from the borrower, notice being given only after activation",
+      "mapped_passage_ids": [
+        "RBI-DL-0011"
+      ],
+      "evidence_summary": "A regulated entity must ensure there is no automatic increase in credit limit unless an explicit request is received, evaluated, and kept on record from the borrower for such increase; proactively activating a higher limit and notifying the borrower only afterward inverts this consent requirement.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C012",
+      "source_doc": "PixelPay_DigitalLending_Policy_v1",
+      "topic": "Credit line enhancement",
+      "clause_text": "The Company assesses each borrower's creditworthiness using, at minimum, age, occupation, and income information kept on record for audit purposes, and does not increase a borrower's credit limit automatically; any increase is actioned only after an explicit request from the borrower is received, evaluated, and kept on record.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0011"
+      ],
+      "evidence_summary": "Matches the requirement that creditworthiness be assessed on minimum specified parameters and that credit-limit increases occur only pursuant to an explicit, evaluated, and recorded borrower request.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C013",
+      "source_doc": "TrustLend_DigitalLending_Policy_v1",
+      "topic": "penal charges",
+      "clause_text": "Where an EMI is not honoured, the overdue instalment attracts penal interest at 3% per month over and above the contracted rate of interest, which is added to the outstanding principal for the purpose of computing interest in the subsequent billing cycle.",
+      "is_loophole": true,
+      "violation_type": "Default is charged as capitalised 'penal interest' added to the contracted interest rate rather than as a flat, non-compounded penal charge, contrary to the Penal Charges circular",
+      "mapped_passage_ids": [
+        "RBI-PENAL-0003",
+        "RBI-PENAL-0005"
+      ],
+      "evidence_summary": "Penalty for non-compliance must be treated as a 'penal charge' and must not be levied as 'penal interest' added to the rate of interest charged, and there must be no capitalisation of penal charges; charging monthly penal interest that compounds onto principal is precisely the practice the circular prohibits.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C014",
+      "source_doc": "TrustLend_DigitalLending_Policy_v1",
+      "topic": "penal charges",
+      "clause_text": "Where a borrower fails to comply with a material term of the loan contract, the Company levies a flat penal charge, as per its Board-approved policy, that is reasonable and commensurate with the non-compliance; penal charges are never levied as 'penal interest' added to the rate of interest, and no further interest is computed on the penal charge itself.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-PENAL-0003",
+        "RBI-PENAL-0005"
+      ],
+      "evidence_summary": "Matches the requirement that penalties be levied as flat, reasonable, non-compounded 'penal charges' under a Board-approved policy rather than as penal interest added to the rate.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C015",
+      "source_doc": "TrustLend_DigitalLending_Policy_v1",
+      "topic": "penal charges",
+      "clause_text": "The quantum of penal charges applicable to a loan is available to the borrower on request from the Company's customer-care helpline and is finalised at the Company's discretion at the time of default based on the borrower's overall risk profile.",
+      "is_loophole": true,
+      "violation_type": "Penal charges are not disclosed upfront in the loan agreement/KFS/website and are instead determined at the lender's discretion after default, contrary to the upfront-disclosure requirement",
+      "mapped_passage_ids": [
+        "RBI-PENAL-0006"
+      ],
+      "evidence_summary": "The quantum and reason for penal charges must be clearly disclosed to the customer in the loan agreement and KFS, in addition to being displayed on the RE's website; making the charge available only on request and finalising it at the lender's discretion after default withholds exactly the upfront disclosure the circular requires.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C016",
+      "source_doc": "TrustLend_DigitalLending_Policy_v1",
+      "topic": "penal charges",
+      "clause_text": "The quantum and reason for penal charges are disclosed upfront to the borrower in the loan agreement and the Key Fact Statement, and are also displayed on the Company's website under Interest Rates and Service Charges; whenever a reminder for non-compliance is sent, the applicable penal charge is communicated, and each actual levy is separately communicated with reasons.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-PENAL-0006"
+      ],
+      "evidence_summary": "Matches the requirement to disclose the quantum and reason for penal charges upfront in the loan agreement, KFS, and website, and to communicate each reminder and levy instance.",
+      "split": "train"
+    },
+    {
+      "clause_id": "C017",
+      "source_doc": "SwiftCash_DigitalLending_Policy_v1",
+      "topic": "FLDG/DLG",
+      "clause_text": "The Company's DLG arrangement with its empanelled LSP provides a first-loss cover of 8% of the disbursed amount on the earmarked loan portfolio, which the Company considers appropriate given the higher risk profile of its unsecured personal loan book.",
+      "is_loophole": true,
+      "violation_type": "DLG cover is fixed at 8% of the disbursed portfolio, exceeding the 5% statutory cap on Default Loss Guarantee cover",
+      "mapped_passage_ids": [
+        "RBI-DL-0039"
+      ],
+      "evidence_summary": "The total amount of DLG cover on any outstanding portfolio specified upfront must not exceed five per cent of the total amount disbursed from that portfolio at any given time; an 8% cover breaches this cap regardless of the lender's own risk assessment.",
+      "split": "dev"
+    },
+    {
+      "clause_id": "C018",
+      "source_doc": "SwiftCash_DigitalLending_Policy_v1",
+      "topic": "FLDG/DLG",
+      "clause_text": "The Company's DLG arrangement with its empanelled LSP is structured so that the total DLG cover on any outstanding portfolio, specified upfront, does not exceed five per cent of the total amount disbursed out of that loan portfolio at any given time, activated proportionately as loans are disbursed.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0039"
+      ],
+      "evidence_summary": "Matches the requirement that DLG cover on any outstanding portfolio not exceed five per cent of the disbursed amount, activated proportionately as disbursement occurs.",
+      "split": "dev"
+    },
+    {
+      "clause_id": "C019",
+      "source_doc": "SwiftCash_DigitalLending_Policy_v1",
+      "topic": "FLDG/DLG",
+      "clause_text": "In addition to its empanelled LSPs, the Company also accepts DLG arrangements from individual co-founders and angel investors of partner fintech startups who wish to personally guarantee a portion of the loan portfolio in their individual capacity.",
+      "is_loophole": true,
+      "violation_type": "DLG is accepted from individuals in their personal capacity, who are not eligible DLG providers under the Directions, which restrict DLG providers to an LSP or another RE incorporated as a company",
+      "mapped_passage_ids": [
+        "RBI-DL-0033"
+      ],
+      "evidence_summary": "An RE may enter into DLG arrangements only with an LSP, or another RE engaged as an LSP, and the LSP providing DLG must be incorporated as a company under the Companies Act, 2013; individual co-founders or angel investors guaranteeing losses in their personal capacity fall outside this closed list of eligible DLG providers.",
+      "split": "dev"
+    },
+    {
+      "clause_id": "C020",
+      "source_doc": "SwiftCash_DigitalLending_Policy_v1",
+      "topic": "FLDG/DLG",
+      "clause_text": "The Company enters into DLG arrangements only with a Lending Service Provider or another regulated entity engaged as an LSP, and only where the LSP providing the DLG is incorporated as a company under the Companies Act, 2013.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0033"
+      ],
+      "evidence_summary": "Matches the requirement that DLG providers be limited to an LSP (or RE acting as LSP) incorporated as a company under the Companies Act, 2013.",
+      "split": "dev"
+    },
+    {
+      "clause_id": "C021",
+      "source_doc": "CredEasy_DigitalLending_Policy_v1",
+      "topic": "Grievance redressal",
+      "clause_text": "Borrower complaints relating to digital lending are handled by the Company's general customer-support team on a best-effort basis; there is no dedicated nodal grievance redressal officer, and unresolved complaints are escalated internally at management's discretion rather than through a published escalation path to the RBI ombudsman.",
+      "is_loophole": true,
+      "violation_type": "No designated nodal grievance redressal officer exists and borrowers are not informed of the 30-day escalation path to the RBI ombudsman/CMS portal",
+      "mapped_passage_ids": [
+        "RBI-DL-0021",
+        "RBI-DL-0022"
+      ],
+      "evidence_summary": "The RE and any borrower-facing LSP must designate nodal grievance redressal officers with prominently displayed contact details, and if a complaint is rejected, unanswered, or unresolved within 30 days the borrower must be informed of the escalation route to the RBI's CMS portal under the Integrated Ombudsman Scheme; handling complaints informally with no nodal officer or disclosed escalation path fails both requirements.",
+      "split": "test"
+    },
+    {
+      "clause_id": "C022",
+      "source_doc": "CredEasy_DigitalLending_Policy_v1",
+      "topic": "Grievance redressal",
+      "clause_text": "The Company and each LSP with a borrower-facing interface designate a nodal grievance redressal officer, whose contact details are displayed on the Company's website, the LSP's website, the DLA, and the Key Fact Statement; if a complaint is unresolved or unanswered within 30 days, the borrower is informed of the option to escalate to the RBI's Complaint Management System under the Reserve Bank - Integrated Ombudsman Scheme.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0021",
+        "RBI-DL-0022"
+      ],
+      "evidence_summary": "Matches the requirement to designate nodal grievance redressal officers with published contact details and to inform borrowers of the 30-day RBI ombudsman/CMS escalation route.",
+      "split": "test"
+    },
+    {
+      "clause_id": "C023",
+      "source_doc": "CredEasy_DigitalLending_Policy_v1",
+      "topic": "Data sharing/consent",
+      "clause_text": "For latency and cost efficiency, the Company's LSP stores full copies of borrowers' KYC documents, transaction history, and fingerprint-based biometric authentication data on servers operated by its overseas technology vendor, with periodic batch synchronisation back to the Company's systems in India.",
+      "is_loophole": true,
+      "violation_type": "LSP stores full borrower data including biometric information on overseas servers with only periodic sync-back, contrary to both the no-biometric-storage rule and the India data-localisation requirement",
+      "mapped_passage_ids": [
+        "RBI-DL-0025",
+        "RBI-DL-0026"
+      ],
+      "evidence_summary": "An LSP may store only minimal data needed for its scope of engagement, no biometric data may be stored or collected by the RE or LSP absent specific statutory permission, and all data must be stored only on servers located within India with any data processed abroad deleted and repatriated within 24 hours; storing full biometric data on an overseas vendor's servers with only periodic batch sync breaches all three limbs.",
+      "split": "test"
+    },
+    {
+      "clause_id": "C024",
+      "source_doc": "CredEasy_DigitalLending_Policy_v1",
+      "topic": "Data sharing/consent",
+      "clause_text": "The Company ensures that its LSP stores only the minimal borrower data needed for the scope of the RE-LSP agreement, that no biometric data is stored or collected by the Company or the LSP unless expressly permitted under extant statutory guidelines, and that all borrower data is stored exclusively on servers located within India, with any data processed abroad deleted from the overseas servers and returned to India within 24 hours.",
+      "is_loophole": false,
+      "violation_type": null,
+      "mapped_passage_ids": [
+        "RBI-DL-0025",
+        "RBI-DL-0026"
+      ],
+      "evidence_summary": "Matches the requirement of minimal LSP data storage, a prohibition on biometric data storage absent statutory permission, and India-only server localisation with a 24-hour repatriation rule for any data processed abroad.",
+      "split": "dev"
+    }
+  ]
+}
