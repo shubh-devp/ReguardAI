@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="reguard-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f7cff" />
+      <stop offset="1" stop-color="#2f57d8" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="#06090f" />
+  <path
+    d="M16 5.5 8 8.6v7c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11v-7Z"
+    fill="url(#reguard-fill)"
+  />
+  <path
+    d="m12.3 16.2 2.6 2.6 4.9-5.4"
+    fill="none"
+    stroke="#06090f"
+    stroke-width="2.1"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

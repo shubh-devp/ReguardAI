@@ -36,4 +36,3 @@ Thumbs.db
 *.log
 frontend/dist
 frontend/node_modules
-frontend/
