@@ -57,6 +57,34 @@ def as_bool(value) -> bool:
     return bool(value)
 
 
+def align_by_index(entries, count):
+    """Line a batched model reply up with the items it was asked about.
+
+    Batched prompts ask the model to report each answer under an explicit index, so
+    a reply that comes back reordered, short, or with a repeated index cannot be
+    silently shifted onto the wrong item. Anything the model did not answer stays
+    ``None``, which callers read as "not measured" rather than as a verdict.
+    """
+    aligned = [None] * count
+    if not isinstance(entries, list):
+        return aligned
+
+    for position, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+
+        index = entry.get("index", position)
+        if not isinstance(index, int) or not 0 <= index < count:
+            # A missing or out-of-range index is more likely to be sloppy
+            # formatting than a real reordering, so fall back to the position.
+            index = position
+        if aligned[index] is None:
+            # A duplicate index must not overwrite an earlier answer.
+            aligned[index] = entry
+
+    return aligned
+
+
 def _strip_code_fence(text: str) -> str:
     """Models sometimes wrap JSON in ```json ... ``` despite being asked not to."""
     text = text.strip()

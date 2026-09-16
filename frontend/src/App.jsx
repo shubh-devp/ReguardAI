@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { runAudit } from './api/audit'
 import AuditForm from './components/AuditForm'
 import AuditResults from './components/AuditResults'
+import ModelMetrics from './components/ModelMetrics'
 
 const DEFAULT_CLAUSE =
   'The lender shall levy a penal charge of 2% per month on delayed repayments, compounded monthly until the outstanding amount is cleared in full.'
@@ -95,6 +96,8 @@ export default function App() {
             Results will appear here after you run an audit.
           </p>
         ) : null}
+
+        <ModelMetrics />
       </main>
 
       <footer className="border-t border-slate-200 py-6">

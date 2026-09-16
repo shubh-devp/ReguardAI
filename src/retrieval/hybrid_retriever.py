@@ -307,6 +307,50 @@ def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY
     return _retrievers[key]
 
 
+def corpus_status(persist_directory=PERSIST_DIRECTORY):
+    """Report what the retrieval stack can actually see.
+
+    A health check that only proves the port is open is not worth much. The
+    failure this project actually hit was a deployment with no corpus and no
+    index: every request answered 200 while every finding cited the same
+    hardcoded fallback sentence. Naming the individual parts is what makes that
+    show up in a readiness probe instead of silently in the results.
+    """
+    model_path = os.path.join(ONNX_MODEL_DIR, "onnx", "model.onnx")
+    status = {
+        "corpus_file": os.path.exists(CORPUS_PATH),
+        "onnx_model": os.path.exists(model_path),
+        "index_directory": os.path.exists(os.path.join(persist_directory, "chroma.sqlite3")),
+        "index_matches_corpus": _saved_index_is_current(CORPUS_PATH, persist_directory),
+        "chunks": 0,
+        "regulatory_chunks": 0,
+    }
+
+    if status["corpus_file"]:
+        try:
+            # Counted straight from the file rather than through
+            # load_chunks_from_json, which would also build 1200+ Document objects
+            # and run the provenance join on every readiness probe.
+            with open(CORPUS_PATH, "r", encoding="utf-8") as handle:
+                items = json.load(handle)
+            status["chunks"] = len(items)
+            status["regulatory_chunks"] = sum(
+                1 for item in items if item.get("metadata", {}).get("type") == REGULATORY_KIND
+            )
+        except (OSError, ValueError) as error:
+            status["corpus_error"] = str(error)
+
+    # Retrieval needs a corpus to search, an encoder to embed with, and something
+    # to search: either a saved index or a corpus that one can be built from.
+    status["retrieval_ready"] = bool(
+        status["corpus_file"]
+        and status["onnx_model"]
+        and status["regulatory_chunks"]
+        and (status["index_directory"] or status["chunks"])
+    )
+    return status
+
+
 
 if __name__ == "__main__":
     print("Starting Stage 2: Local ChromaDB & BM25 Hybrid Retrieval Engine...")

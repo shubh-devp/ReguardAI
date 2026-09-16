@@ -458,7 +458,7 @@
         "ndcg@8": 0.6659,
         "mrr": 0.6576
       },
-      "seconds": 0.5
+      "seconds": 0.6
     },
     "dense": {
       "strategy": "dense",
@@ -888,7 +888,7 @@
         "ndcg@8": 0.752,
         "mrr": 0.7191
       },
-      "seconds": 3.5
+      "seconds": 3.7
     },
     "hybrid": {
       "strategy": "hybrid",
@@ -1318,7 +1318,7 @@
         "ndcg@8": 0.7575,
         "mrr": 0.7163
       },
-      "seconds": 2.4
+      "seconds": 2.9
     },
     "hybrid_rerank": {
       "strategy": "hybrid_rerank",

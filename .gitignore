@@ -21,15 +21,20 @@ data/processed/*.pkl
 *.db
 *.sqlite
 
-# NOTE: the whole data/ directory is currently untracked, which includes
-# data/corpus (the retrieval corpus), data/models (the ONNX encoder) and
-# data/chroma_db (the prebuilt vector index).
+# The subset of data/ that the running app needs is tracked on purpose:
+#   data/corpus       the retrieval corpus (JSON)
+#   data/chroma_db    the prebuilt vector index
+#   data/models       the ONNX encoder
+#   data/regulatory   the source RBI PDFs
+#   data/policies     the policies the benchmark was built from
+#   data/benchmarks   the labelled benchmark and the written evaluation results
 #
-# A deployment built from this repository therefore has no corpus and no index.
-# The retriever logs "Retriever unavailable; audits will use a fixed passage" and
-# every finding falls back to one hardcoded sentence. Re-add the subset the app
-# needs (corpus JSON + ONNX model + chroma_db) before deploying for retrieval to
-# work, or fetch it during the build.
+# Earlier commits untracked data/ entirely, so the deployed service had no corpus
+# and no index: every request answered 200 while every finding cited a hardcoded
+# fallback passage. Keep the subset above tracked. What stays ignored is the parts
+# that are regenerated or machine-specific: the SQLite audit trail and the pickled
+# model. Note that `git add -A` after a clean clone would re-add everything, so add
+# files by name.
 
 
 node_modules/

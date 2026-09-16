@@ -1,68 +1,218 @@
-import json
-import logging
+"""Adversarial red-team agents, one per compliance surface.
 
-from src.agents.llm import ensure_api_key, generate_json
+The pipeline used to run a single attacker, which produced a single attack
+scenario; the Re-Test stage then rephrased that one scenario three times and
+called it an attack set. That overstates coverage, because all three probes come
+from the same idea.
+
+This module runs one attacker per surface. Each has its own prompt and its own
+lens, the calls are independent so they run in parallel, and their verdicts are
+then aggregated into an agreement summary. Where the attackers disagree, that is
+recorded rather than hidden: a surface that finds a loophole while the others do
+not is a signal worth surfacing to a reviewer.
+"""
+
+import logging
+from concurrent.futures import ThreadPoolExecutor
+
+from src.agents.llm import as_bool, ensure_api_key, generate_json
 
 logger = logging.getLogger(__name__)
 
+SEVERITIES = ("Low", "Medium", "High")
 
-def generate_adversarial_attack(structured_clause: dict) -> dict:
+# The distinct compliance surfaces the auditors reason over. Each is a separate
+# agent with a separate lens, not a rephrasing of one query.
+SURFACES = (
+    {
+        "id": "disclosure",
+        "title": "APR and Key Fact Statement disclosure",
+        "lens": (
+            "Transparency of the all-inclusive cost of credit: whether the APR and the Key Fact "
+            "Statement disclose interest, processing fees, documentation charges and any bundled "
+            "insurance together, and whether mandatory fees are left out of the headline figure."
+        ),
+    },
+    {
+        "id": "charges",
+        "title": "Penal charges and fees",
+        "lens": (
+            "Penal charges and compounding: whether penal charges are levied as a penal interest "
+            "added to the rate, whether they are capitalised or compounded, whether they are "
+            "excessive, and whether any fee duplicates a permitted one-time charge."
+        ),
+    },
+    {
+        "id": "cooling_off",
+        "title": "Cooling-off and exit rights",
+        "lens": (
+            "The borrower's right to exit: whether the cooling-off period exists and is at least "
+            "one day, whether exit is penalty-free beyond a reasonable disclosed one-time "
+            "processing fee, and whether any exit charge or condition obstructs it."
+        ),
+    },
+    {
+        "id": "data_consent",
+        "title": "Data sharing, consent and third parties",
+        "lens": (
+            "Data handling and third parties: whether consent for data sharing is explicit and "
+            "purpose-limited, whether third-party or LSP arrangements are disclosed, and whether "
+            "the borrower can withdraw consent."
+        ),
+    },
+)
+
+PROMPT = """\
+You are the {title} red-team agent for Reguard AI, an RBI digital-lending compliance engine.
+
+Your lens is narrow on purpose. Judge the clause only through it:
+{lens}
+
+Policy clause under test:
+"{clause_text}"
+
+Look for a concrete way this clause could be exploited or could breach the
+Reserve Bank of India's digital lending directions through your lens. A clause is
+only an exploit if a borrower could actually be harmed by it, not merely because
+it is worded loosely. If your lens does not apply to this clause, say so by
+setting vulnerability_detected to false.
+
+Return raw JSON only, with exactly these keys:
+- "vulnerability_detected": boolean
+- "severity": string, one of "Low", "Medium", "High"
+- "attack_scenario": string, one concrete scenario in which a borrower is harmed
+- "explanation": string, the regulatory reasoning for your verdict
+"""
+
+
+def _normalise(raw, surface):
+    """Coerce one agent's reply into a fixed shape.
+
+    Agent replies are parsed JSON rather than a validated schema, so a field can
+    be missing, the wrong type, or an unexpected severity. Everything is coerced
+    here so the rest of the pipeline never has to guess.
     """
-    Red-Team Challenger Agent. Takes a structured clause and simulates an 
-    adversarial audit to find compliance loopholes or RBI guideline violations.
+    severity = str(raw.get("severity") or "").strip().title()
+    if severity not in SEVERITIES:
+        severity = "Medium"
+
+    return {
+        "surface": surface["id"],
+        "title": surface["title"],
+        "vulnerability_detected": as_bool(raw.get("vulnerability_detected", False)),
+        "severity": severity,
+        "attack_scenario": str(raw.get("attack_scenario") or "").strip(),
+        "explanation": str(raw.get("explanation") or "").strip(),
+        "failed": False,
+    }
+
+
+def _failed_attack(surface, reason):
+    """A surface that could not be assessed is recorded as failed, not as clear."""
+    return {
+        "surface": surface["id"],
+        "title": surface["title"],
+        "vulnerability_detected": False,
+        "severity": "Low",
+        "attack_scenario": "",
+        "explanation": f"Agent failed: {reason}",
+        "failed": True,
+    }
+
+
+def run_surface(surface, clause_text):
+    """Ask one surface agent to attack the clause."""
+    prompt = PROMPT.format(
+        title=surface["title"], lens=surface["lens"], clause_text=clause_text
+    )
+    try:
+        # Higher temperature than the auditor: this stage is meant to explore.
+        return _normalise(generate_json(prompt, temperature=0.6), surface)
+    except Exception as error:
+        logger.warning("Adversarial agent %s failed: %s", surface["id"], error)
+        return _failed_attack(surface, error)
+
+
+def summarise(attacks):
+    """Aggregate the agents' verdicts into an agreement summary.
+
+    Disagreement is reported rather than smoothed over: a single surface finding a
+    loophole that the others miss is exactly the case a reviewer should look at.
+    """
+    if not attacks:
+        return {
+            "attacks_generated": 0,
+            "surfaces_flagged": 0,
+            "agreement": 0.0,
+            "highest_severity": None,
+            "consensus": "no_attacks",
+            "flagged_surfaces": [],
+            "failed_surfaces": [],
+        }
+
+    flagged = [attack for attack in attacks if attack["vulnerability_detected"]]
+    failed = [attack for attack in attacks if attack["failed"]]
+
+    if not flagged:
+        consensus = "unanimous_clear"
+    elif len(flagged) == len(attacks):
+        consensus = "unanimous_vulnerable"
+    else:
+        consensus = "split"
+
+    return {
+        "attacks_generated": len(attacks),
+        "surfaces_flagged": len(flagged),
+        "agreement": round(len(flagged) / len(attacks), 4),
+        "highest_severity": highest_severity(flagged),
+        "consensus": consensus,
+        "flagged_surfaces": [attack["surface"] for attack in flagged],
+        "failed_surfaces": [attack["surface"] for attack in failed],
+    }
+
+
+def highest_severity(attacks):
+    """The most severe rating among a set of attacks."""
+    if not attacks:
+        return None
+    return max((attack["severity"] for attack in attacks), key=SEVERITIES.index)
+
+
+def select_primary(attacks):
+    """The attack the audit proceeds with.
+
+    The most severe flagged attack wins. Ties break on the surface order in
+    ``SURFACES``, so the same clause always yields the same primary attack.
+    """
+    flagged = [attack for attack in attacks if attack["vulnerability_detected"]]
+    if not flagged:
+        return None
+
+    order = [surface["id"] for surface in SURFACES]
+    return max(
+        flagged,
+        key=lambda attack: (SEVERITIES.index(attack["severity"]), -order.index(attack["surface"])),
+    )
+
+
+def generate_adversarial_attacks(clause_text, max_workers=None):
+    """Run every surface agent in parallel and return their attacks.
+
+    The calls are independent HTTP requests, so threads are safe and the wall
+    clock is the slowest single agent rather than the sum of all of them.
     """
     ensure_api_key()
 
-    prompt = f"""
-    You are the Challenger (Red-Team) Agent for Reguard AI. 
-    Your objective is to stress-test enterprise digital lending policies by finding regulatory weaknesses, 
-    loopholes, or potential RBI guideline violations based on the following structured clause.
+    workers = max_workers or len(SURFACES)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        attacks = list(pool.map(lambda surface: run_surface(surface, clause_text), SURFACES))
 
-    Structured Policy Clause:
-    {json.dumps(structured_clause, indent=2)}
+    order = [surface["id"] for surface in SURFACES]
+    attacks.sort(key=lambda attack: order.index(attack["surface"]))
 
-    Think like an aggressive fintech regulatory auditor or security red-teamer. Look for:
-    - Excessive penal charges or hidden fees.
-    - Lack of explicit borrower disclosure/consent windows.
-    - Unfair terms or regulatory non-compliance.
-
-    Return your analysis strictly as a valid JSON object with these exact keys:
-    - "vulnerability_detected": true or false
-    - "explanation": A clear explanation of why this policy clause is non-compliant or risky
-    - "severity": "High", "Medium", or "Low"
-    - "attack_scenario": A realistic borrower situation that exposes this loophole
-
-    Do not include markdown code block wrappers (like ```json) in your response if possible, just raw JSON.
-    """
-
-    try:
-        # A higher temperature gives the challenger room for creative attack scenarios.
-        return generate_json(prompt, temperature=0.6)
-
-    except Exception as error:
-        logger.error("Challenger agent failed: %s", error)
-        return {
-            "vulnerability_detected": False,
-            "explanation": "Failed to parse model response as JSON.",
-            "severity": "Low",
-            "attack_scenario": ""
-        }
-
-if __name__ == "__main__":
-    print("--- Running Red-Team Challenger Agent (challenger.py) ---")
-    
-    # Sample structured input (mimicking what analyst.py produces)
-    sample_input = {
-        "actor": "Lender",
-        "action": "levy penal charge",
-        "limit": "2% per month",
-        "condition": "delayed repayment after 7 days"
-    }
-    
-    print(f"\nTargeting Clause Structure:\n{json.dumps(sample_input, indent=4)}")
-    print("\nLaunching adversarial red-team simulation via Gemini...")
-    
-    attack_report = generate_adversarial_attack(sample_input)
-    
-    print("\nGenerated Vulnerability Report:")
-    print(json.dumps(attack_report, indent=4))
+    summary = summarise(attacks)
+    logger.info(
+        "Red team: %d/%d surfaces flagged a vulnerability (%s)",
+        summary["surfaces_flagged"], summary["attacks_generated"], summary["consensus"],
+    )
+    return attacks, summary

@@ -54,7 +54,49 @@ export function describeStatus(status) {
         color: 'text-red-600',
         note: 'The verifier could not confirm the RBI citation, so remediation was skipped and the finding is left for manual review.',
       }
+    case 'no_vulnerability_detected':
+      return {
+        label: 'No vulnerability found',
+        color: 'text-green-700',
+        note: 'Every red-team surface came back clear, so there was nothing to audit or remediate.',
+      }
     default:
       return { label: status || 'Completed', color: 'text-slate-700', note: '' }
+  }
+}
+
+/** Plain-language description of the re-test verdict. */
+export function describeVerdict(verdict) {
+  switch (verdict) {
+    case 'fully_mitigated':
+      return { label: 'Fully mitigated', color: 'text-green-700' }
+    case 'partially_mitigated':
+      return { label: 'Partially mitigated', color: 'text-amber-600' }
+    case 'not_mitigated':
+      return { label: 'Not mitigated', color: 'text-red-600' }
+    case 'no_vulnerability_detected':
+      return { label: 'Never vulnerable', color: 'text-slate-600' }
+    case 'not_measured':
+      return { label: 'Not measured', color: 'text-slate-600' }
+    case 'flagged_unverified':
+      return { label: 'Flagged — not remediated', color: 'text-red-600' }
+    default:
+      return { label: verdict || '—', color: 'text-slate-600' }
+  }
+}
+
+/** Plain-language description of the red team's agreement. */
+export function describeConsensus(consensus) {
+  switch (consensus) {
+    case 'unanimous_vulnerable':
+      return 'Every surface found a way to attack this clause.'
+    case 'unanimous_clear':
+      return 'Every surface judged this clause clear.'
+    case 'split':
+      return 'The surfaces disagreed, which is the case worth a human look.'
+    case 'no_attacks':
+      return 'No attack agents ran for this clause.'
+    default:
+      return ''
   }
 }
