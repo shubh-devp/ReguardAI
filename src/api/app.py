@@ -371,10 +371,21 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
-    # The models take a while to load, so start that in the background. The port
-    # opens straight away and Render's health check passes; by the time the user
-    # submits a clause the pipeline is usually already loaded.
-    threading.Thread(target=warm_up, daemon=True).start()
+    # Warm-up pre-loads the retrieval stack so the first audit is fast. It is a pure
+    # optimisation and it has no effect on correctness, but it costs a couple of
+    # hundred megabytes of resident memory at startup - memory a 512 MB instance
+    # cannot spare alongside the running service. On the deployed instance the
+    # process was being killed while warming up, which took the whole service down
+    # and produced a 502 on every route, including the ones that import nothing.
+    #
+    # It is therefore off by default. The port opens with almost no memory in use,
+    # every read-only route answers, and the first audit pays the load instead. Set
+    # WARMUP=1 in the environment to restore the old behaviour on a larger instance.
+    if os.environ.get("WARMUP", "0") == "1":
+        threading.Thread(target=warm_up, daemon=True).start()
+        logger.info("Warm-up started in the background")
+    else:
+        logger.info("Warm-up disabled; the first audit will load the retrieval stack")
 
     logger.info("Reguard AI backend listening on port %s", port)
     app.run(host="0.0.0.0", port=port, debug=debug)
