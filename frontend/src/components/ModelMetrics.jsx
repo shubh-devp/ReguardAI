@@ -143,7 +143,7 @@ export default function ModelMetrics() {
   }, [])
 
   return (
-    <section className="mt-8 rounded-lg border border-slate-200 bg-white">
+    <section className="no-print mt-8 rounded-lg border border-slate-200 bg-white">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

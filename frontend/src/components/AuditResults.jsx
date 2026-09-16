@@ -217,13 +217,20 @@ function ReTestCard({ retest }) {
       title="Attack success rate (re-test)"
       subtitle={`ASR is the share of the same ${retest.total_attacks} attacks that defeated the clause before and after the patch`}
     >
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Metric label="ASR before" value={formatPercent(retest.asr_before)} valueClass="text-red-600" />
-        <Metric
-          label="ASR after"
-          value={formatPercent(retest.asr_after)}
-          valueClass={retest.asr_after === 0 ? 'text-green-700' : 'text-amber-600'}
+      <div className="space-y-3">
+        <AsrBar
+          label="Attacks that defeated the clause before the patch"
+          value={retest.asr_before}
+          tone="bg-slate-700"
         />
+        <AsrBar
+          label="Attacks that defeat it after the patch"
+          value={retest.asr_after}
+          tone="bg-blue-600"
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
         <Metric
           label="Change"
           value={formatDelta(retest.asr_before, retest.asr_after)}
@@ -232,16 +239,6 @@ function ReTestCard({ retest }) {
           }
         />
         <Metric label="Verdict" value={verdict.label} valueClass={verdict.color} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Metric label="Attacks run" value={retest.total_attacks ?? '—'} />
-        <Metric label="Defeated before" value={retest.original_successes ?? '—'} valueClass="text-red-600" />
-        <Metric
-          label="Defeated after"
-          value={retest.patched_successes ?? '—'}
-          valueClass={retest.patched_successes === 0 ? 'text-green-700' : 'text-amber-600'}
-        />
         <Metric
           label="Exploits blocked by the patch"
           value={
@@ -249,6 +246,16 @@ function ReTestCard({ retest }) {
               ? 'n/a'
               : formatPercent(retest.remediation_success_rate)
           }
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <Metric label="Attacks run" value={retest.total_attacks ?? '—'} />
+        <Metric label="Defeated before" value={retest.original_successes ?? '—'} valueClass="text-red-600" />
+        <Metric
+          label="Defeated after"
+          value={retest.patched_successes ?? '—'}
+          valueClass={retest.patched_successes === 0 ? 'text-green-700' : 'text-amber-600'}
         />
       </div>
 
@@ -311,6 +318,96 @@ function ReTestCard({ retest }) {
 }
 
 /**
+ * The six stages the clause passes through, in order. A stage that did not run
+ * is shown as skipped rather than hidden, so the report never reads as though
+ * work happened that did not.
+ */
+function Pipeline({ result }) {
+  const { risk, red_team: redTeam, audit, verification, remediation } = result
+  const retest = remediation?.retest_metrics
+  const redTeamed = risk?.requires_red_teaming === true
+
+  const stages = [
+    { name: 'Risk triage', value: redTeamed ? 'escalated' : 'cleared', ran: true },
+    {
+      name: 'Red team',
+      value: redTeamed
+        ? `${redTeam?.surfaces_flagged ?? 0} of ${redTeam?.attacks_generated ?? 0} surfaces vulnerable`
+        : 'not run',
+      ran: redTeamed,
+    },
+    {
+      name: 'Auditor',
+      value: !redTeamed ? 'not run' : audit?.violation_confirmed ? 'violation confirmed' : 'no violation',
+      ran: redTeamed,
+    },
+    {
+      name: 'Verifier',
+      value: !redTeamed ? 'not run' : verification?.is_supported ? 'citation supported' : 'citation unsupported',
+      ran: redTeamed,
+    },
+    {
+      name: 'Remediator',
+      value: !redTeamed ? 'not run' : remediation?.agent_status || 'ran',
+      ran: redTeamed,
+    },
+    {
+      name: 'Re-test',
+      value: retest ? describeVerdict(retest.verdict).label.toLowerCase() : 'not run',
+      ran: Boolean(retest),
+    },
+  ]
+
+  return (
+    <ol className="grid gap-3 sm:grid-cols-3">
+      {stages.map((stage, index) => (
+        <li
+          key={stage.name}
+          className={`border-t-2 pt-2 ${stage.ran ? 'border-blue-600' : 'border-slate-200'}`}
+        >
+          <p className="text-xs font-medium text-slate-500">
+            {index + 1}. {stage.name}
+          </p>
+          <p className="mt-0.5 text-xs leading-snug text-slate-700">{stage.value}</p>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/**
+ * One attack-success-rate bar. The number is printed alongside it, because bar
+ * length alone is not readable at a glance or by a screen reader.
+ */
+function AsrBar({ label, value, tone }) {
+  const width = typeof value === 'number' ? Math.max(0, Math.min(1, value)) * 100 : 0
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <span className="text-xs font-medium text-slate-500">{label}</span>
+        <span className="text-sm font-semibold text-slate-900">{formatPercent(value)}</span>
+      </div>
+      <div className="mt-1.5 h-2.5 w-full rounded-full bg-slate-100">
+        <div className={`h-2.5 rounded-full ${tone}`} style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  )
+}
+
+/** Saves the raw response, so a finding can be re-checked without the interface. */
+function downloadReport(result) {
+  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `reguard-audit-${result.request_id || 'report'}.json`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * Renders the response from POST /api/audit in a fixed reading order.
  * Nothing is shown that the backend did not return.
  */
@@ -323,10 +420,28 @@ export default function AuditResults({ result, originalClause }) {
 
   return (
     <div className="mt-8 space-y-5">
+      <div className="no-print flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-medium text-slate-700">Audit report</h3>
+        <div className="flex items-center gap-4 text-xs">
+          <button
+            type="button"
+            onClick={() => downloadReport(result)}
+            className="text-blue-600 hover:underline"
+          >
+            Download JSON
+          </button>
+          <button type="button" onClick={() => window.print()} className="text-blue-600 hover:underline">
+            Print / save as PDF
+          </button>
+        </div>
+      </div>
+
       <Card title="Result summary">
-        <div>
-          <p className={`text-lg font-semibold ${statusText.color}`}>{statusText.label}</p>
-          {statusText.note ? <p className="mt-1 text-slate-600">{statusText.note}</p> : null}
+        <div className={`rounded-md border-l-4 bg-slate-50 px-4 py-3 ${statusText.border}`}>
+          <p className={`text-xl font-semibold ${statusText.color}`}>{statusText.label}</p>
+          {statusText.note ? (
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{statusText.note}</p>
+          ) : null}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -344,6 +459,8 @@ export default function AuditResults({ result, originalClause }) {
             style={{ width: `${Math.min(100, (risk?.risk_score || 0) * 100)}%` }}
           />
         </div>
+
+        <Pipeline result={result} />
 
         <p className="text-xs text-slate-500">
           status <span className="font-mono">{status}</span>

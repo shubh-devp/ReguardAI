@@ -38,7 +38,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
+      <header className="no-print border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-6 py-5">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Reguard AI</h1>
@@ -51,10 +51,10 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-10">
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+        <h2 className="no-print text-2xl font-semibold tracking-tight text-slate-900">
           Regulatory Compliance Audit
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+        <p className="no-print mt-2 text-sm leading-relaxed text-slate-600">
           Paste a lending policy clause below. Reguard AI scores its risk, red-teams it the way a
           borrower would, checks it against RBI regulation and drafts a compliant rewrite.
         </p>
@@ -100,7 +100,7 @@ export default function App() {
         <ModelMetrics />
       </main>
 
-      <footer className="border-t border-slate-200 py-6">
+      <footer className="no-print border-t border-slate-200 py-6">
         <p className="mx-auto max-w-3xl px-6 text-xs text-slate-500">
           Reguard AI — multi-agent compliance checker for digital lending policies.
         </p>

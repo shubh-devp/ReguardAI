@@ -7,3 +7,19 @@ body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+@media print {
+  /* Printing is for the report. The form, the chrome and the metrics panel are
+     screens-only, so they carry .no-print. */
+  body {
+    background-color: #fff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  section {
+    break-inside: avoid;
+  }
+}

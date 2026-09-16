@@ -34,34 +34,39 @@ export function describeStatus(status) {
       return {
         label: 'Compliant',
         color: 'text-green-700',
+        border: 'border-green-600',
         note: 'Risk triage scored this clause below the red-team threshold, so the adversarial audit was not run.',
       }
     case 'remediated':
       return {
         label: 'Violation found and remediated',
         color: 'text-green-700',
+        border: 'border-green-600',
         note: 'A violation was confirmed, the clause was rewritten, and the patched version passed the re-test.',
       }
     case 'remediation_flagged':
       return {
         label: 'Violation found — patch needs review',
         color: 'text-amber-600',
+        border: 'border-amber-500',
         note: 'A violation was confirmed and a patch was drafted, but the patch still failed at least one attack probe.',
       }
     case 'flagged_unverified':
       return {
         label: 'Flagged — evidence could not be verified',
         color: 'text-red-600',
+        border: 'border-red-600',
         note: 'The verifier could not confirm the RBI citation, so remediation was skipped and the finding is left for manual review.',
       }
     case 'no_vulnerability_detected':
       return {
         label: 'No vulnerability found',
         color: 'text-green-700',
+        border: 'border-green-600',
         note: 'Every red-team surface came back clear, so there was nothing to audit or remediate.',
       }
     default:
-      return { label: status || 'Completed', color: 'text-slate-700', note: '' }
+      return { label: status || 'Completed', color: 'text-slate-700', border: 'border-slate-300', note: '' }
   }
 }
 
