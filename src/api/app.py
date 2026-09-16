@@ -255,8 +255,13 @@ def ready():
 
     The port being open says nothing about whether retrieval works, and the
     deployment failure this project hit was exactly that gap.
+
+    Imported from src.retrieval.health, which touches only the filesystem. Pulling
+    in the retriever module here would drag ChromaDB, onnxruntime and LangChain into
+    a request thread - tens of seconds on a cold container, which is long enough to
+    be marked unhealthy and restarted if this endpoint is used as a health check.
     """
-    from src.retrieval.hybrid_retriever import corpus_status
+    from src.retrieval.health import corpus_status
 
     status = corpus_status()
     return jsonify(

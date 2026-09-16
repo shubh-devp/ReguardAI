@@ -1,4 +1,3 @@
-import hashlib
 import importlib
 import importlib.machinery
 import importlib.util
@@ -15,22 +14,34 @@ from langchain_core.embeddings import Embeddings
 from langchain_chroma import Chroma
 
 from src.retrieval import provenance
+from src.retrieval.health import (
+    CHUNK_SCHEMA_VERSION,
+    CORPUS_PATH,
+    EMBEDDING_BACKEND,
+    EMBEDDING_MODEL,
+    FINGERPRINT_FILE,
+    ONNX_MODEL_DIR as _ONNX_MODEL_DIR,
+    PERSIST_DIRECTORY,
+    REGULATORY_KIND,
+    corpus_fingerprint,
+    index_matches_corpus,
+)
 
-CORPUS_PATH = "data/corpus/parsed_corpus_chunks.json"
-PERSIST_DIRECTORY = "data/chroma_db"
+# Re-exported here as well, because this module was the original home of these
+# names and other code imports them from it.
+__all__ = [
+    "CORPUS_PATH",
+    "PERSIST_DIRECTORY",
+    "COLLECTION_NAME",
+    "REGULATORY_KIND",
+    "DEFAULT_K",
+    "load_chunks_from_json",
+    "build_retriever",
+    "build_chroma_hybrid_retriever",
+]
+
 COLLECTION_NAME = "rbi_corpus"
-FINGERPRINT_FILE = "corpus_fingerprint.json"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-EMBEDDING_BACKEND = "onnx"
-ONNX_MODEL_DIR = Path(__file__).resolve().parents[2] / "data" / "models" / "onnx_models" / EMBEDDING_MODEL
-
-# Chunk metadata is derived from the corpus file, so it has to be versioned
-# separately: changing how it is built must invalidate the saved index too.
-CHUNK_SCHEMA_VERSION = 2
-
-# The index holds both the RBI documents and the lender policy documents. Only
-# the former count as regulatory evidence.
-REGULATORY_KIND = "regulatory_pdf"
+ONNX_MODEL_DIR = Path(_ONNX_MODEL_DIR)
 
 DEFAULT_K = 4
 
@@ -118,8 +129,18 @@ def _build_metadata(item):
     return metadata
 
 
+#The parsed corpus, cached per path. Both the auditor and the re-test agent build a
+#retriever, and each one used to parse its own copy of all 1268 chunks - the same
+#JSON decoded twice into two sets of Document objects. The retriever was already
+#cached; this caches what the retriever is built from.
+_documents = {}
+
+
 def load_chunks_from_json(json_path=CORPUS_PATH):
     #loading the parsed corpus chunks generated from Stage 1 parser.
+    if json_path in _documents:
+        return _documents[json_path]
+
     if not os.path.exists(json_path):
         raise FileNotFoundError(f"Corpus JSON not found at {json_path}. Run parser.py first!")
 
@@ -135,6 +156,7 @@ def load_chunks_from_json(json_path=CORPUS_PATH):
         for item in data
     ]
     print(f"-> Loaded {len(documents)} documents into memory.")
+    _documents[json_path] = documents
     return documents
 
 
@@ -169,43 +191,13 @@ def build_embeddings():
     return _embeddings
 
 
-def _corpus_fingerprint(corpus_path):
-    #sha256 of the corpus file. If the corpus changes, the saved index is stale and
-    #gets rebuilt, so we never retrieve from vectors that no longer match the text.
-    digest = hashlib.sha256()
-    with open(corpus_path, "rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def _saved_index_is_current(corpus_path, persist_directory):
-    marker_path = os.path.join(persist_directory, FINGERPRINT_FILE)
-    if not (os.path.exists(marker_path) and os.path.exists(corpus_path)):
-        return False
-
-    try:
-        with open(marker_path, "r", encoding="utf-8") as handle:
-            saved = json.load(handle)
-        # The backend is part of the check because vectors written by one encoder
-        # cannot be searched with queries from another. The schema version covers
-        # the chunk metadata, which is stored alongside the vectors.
-        return (
-            saved.get("corpus_sha256") == _corpus_fingerprint(corpus_path)
-            and saved.get("embedding_backend") == EMBEDDING_BACKEND
-            and saved.get("chunk_schema_version") == CHUNK_SCHEMA_VERSION
-        )
-    except (OSError, ValueError):
-        return False
-
-
 def _write_fingerprint(corpus_path, persist_directory):
     os.makedirs(persist_directory, exist_ok=True)
     marker_path = os.path.join(persist_directory, FINGERPRINT_FILE)
     with open(marker_path, "w", encoding="utf-8") as handle:
         json.dump(
             {
-                "corpus_sha256": _corpus_fingerprint(corpus_path),
+                "corpus_sha256": corpus_fingerprint(corpus_path),
                 "embedding_backend": EMBEDDING_BACKEND,
                 "chunk_schema_version": CHUNK_SCHEMA_VERSION,
             },
@@ -216,7 +208,7 @@ def _write_fingerprint(corpus_path, persist_directory):
 def _load_or_build_vectorstore(documents, embeddings, corpus_path, persist_directory):
     #Encoding 1268 chunks takes minutes on a small instance, so a previously built
     #index is reused whenever it still matches the corpus.
-    if _saved_index_is_current(corpus_path, persist_directory):
+    if index_matches_corpus(corpus_path, persist_directory):
         print(f"-> Reusing the saved vector store at '{persist_directory}'")
         return Chroma(
             collection_name=COLLECTION_NAME,
@@ -308,48 +300,15 @@ def build_chroma_hybrid_retriever(documents, persist_directory=PERSIST_DIRECTORY
 
 
 def corpus_status(persist_directory=PERSIST_DIRECTORY):
-    """Report what the retrieval stack can actually see.
+    """Deprecated alias. The real implementation lives in src/retrieval/health.py.
 
-    A health check that only proves the port is open is not worth much. The
-    failure this project actually hit was a deployment with no corpus and no
-    index: every request answered 200 while every finding cited the same
-    hardcoded fallback sentence. Naming the individual parts is what makes that
-    show up in a readiness probe instead of silently in the results.
+    It moved so that a readiness probe does not have to import ChromaDB,
+    onnxruntime and LangChain just to stat a few files. Kept as a re-export so
+    existing callers keep working.
     """
-    model_path = os.path.join(ONNX_MODEL_DIR, "onnx", "model.onnx")
-    status = {
-        "corpus_file": os.path.exists(CORPUS_PATH),
-        "onnx_model": os.path.exists(model_path),
-        "index_directory": os.path.exists(os.path.join(persist_directory, "chroma.sqlite3")),
-        "index_matches_corpus": _saved_index_is_current(CORPUS_PATH, persist_directory),
-        "chunks": 0,
-        "regulatory_chunks": 0,
-    }
+    from src.retrieval.health import corpus_status as _corpus_status
 
-    if status["corpus_file"]:
-        try:
-            # Counted straight from the file rather than through
-            # load_chunks_from_json, which would also build 1200+ Document objects
-            # and run the provenance join on every readiness probe.
-            with open(CORPUS_PATH, "r", encoding="utf-8") as handle:
-                items = json.load(handle)
-            status["chunks"] = len(items)
-            status["regulatory_chunks"] = sum(
-                1 for item in items if item.get("metadata", {}).get("type") == REGULATORY_KIND
-            )
-        except (OSError, ValueError) as error:
-            status["corpus_error"] = str(error)
-
-    # Retrieval needs a corpus to search, an encoder to embed with, and something
-    # to search: either a saved index or a corpus that one can be built from.
-    status["retrieval_ready"] = bool(
-        status["corpus_file"]
-        and status["onnx_model"]
-        and status["regulatory_chunks"]
-        and (status["index_directory"] or status["chunks"])
-    )
-    return status
-
+    return _corpus_status(persist_directory)
 
 
 if __name__ == "__main__":

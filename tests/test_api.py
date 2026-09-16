@@ -6,6 +6,8 @@ calls. Validation happens before the orchestrator is touched, so these stay fast
 and offline.
 """
 
+import sys
+
 import pytest
 
 from src.api import app as api
@@ -185,6 +187,35 @@ def test_readiness_reports_the_parts_retrieval_depends_on(client):
     assert body["retrieval"]["regulatory_chunks"] > 0
     assert body["retrieval"]["retrieval_ready"] is True
     assert response.status_code == 200
+
+
+def test_readiness_does_not_import_the_retrieval_stack(client):
+    """A readiness probe has to stay cheap.
+
+    Importing the retriever pulls in ChromaDB, onnxruntime and LangChain - tens of
+    seconds and hundreds of megabytes on a cold container. A probe that slow gets
+    the instance marked unhealthy and restarted when the host uses it as a health
+    check, which presents as a permanent 502. Everything this route needs is on the
+    filesystem, so none of those imports should happen.
+    """
+    heavy = ("chromadb", "onnxruntime", "langchain_chroma", "langchain_community")
+    for name in heavy:
+        sys.modules.pop(name, None)
+
+    assert client.get("/api/ready").status_code == 200
+
+    assert [name for name in heavy if name in sys.modules] == []
+
+
+def test_health_does_not_import_the_retrieval_stack(client):
+    """The liveness probe is even cheaper, and must stay that way."""
+    heavy = ("chromadb", "onnxruntime", "langchain_chroma", "langchain_community")
+    for name in heavy:
+        sys.modules.pop(name, None)
+
+    assert client.get("/api/health").status_code == 200
+
+    assert [name for name in heavy if name in sys.modules] == []
 
 
 def test_metrics_serves_the_measured_results(client):
