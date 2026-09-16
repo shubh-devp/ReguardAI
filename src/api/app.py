@@ -16,10 +16,28 @@ import time
 import uuid
 from pathlib import Path
 
-# Keep OpenMP/BLAS thread pools small. Render's smaller instances are memory
-# bound, and these pools are one of the biggest fixed costs of loading torch.
+# Cap every numerical library's thread pool at one thread.
+#
+# This is not a tuning preference, it decides whether the process fits in the
+# instance at all. numpy defaults to one worker per core, and importing it then
+# calling into BLAS allocates a thread pool plus per-thread scratch buffers. That
+# measured +235 MB of resident memory on an 8-core box here, against +10 MB when
+# capped, and scikit-learn inherits the same cost on top.
+#
+# Each library reads a different variable, so all of them are set. OpenBLAS is the
+# one that matters on Linux: the pip wheels for numpy and scipy link against it, and
+# it ignores OMP_NUM_THREADS unless it was built with OpenMP. Setting only the
+# OpenMP and MKL variables therefore looked correct on a development machine and did
+# nothing in the container, which is what made the deployed process exceed its
+# memory limit during warm-up.
+#
+# These have to be in the environment before numpy is first imported, which is why
+# they sit at the top of the module rather than inside main().
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # The project root has to be importable for `from src....` to work. Render starts

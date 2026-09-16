@@ -6,6 +6,7 @@ calls. Validation happens before the orchestrator is touched, so these stay fast
 and offline.
 """
 
+import os
 import sys
 
 import pytest
