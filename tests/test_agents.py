@@ -62,8 +62,22 @@ def test_evidence_block_reports_the_citation():
     assert block["passage_id"] == "RBI-PENAL-0004"
     assert block["section"] == "Para 3(ii)"
     assert block["passage_text"].startswith("Penal charges")
-    assert len(block["candidates"]) == 2
-    assert block["candidates"][1]["document"] == "RBI_digital_Guidline2.pdf"
+    # The cited passage is not repeated among its own alternatives.
+    assert len(block["candidates"]) == 1
+    assert block["candidates"][0]["document"] == "RBI_digital_Guidline2.pdf"
+
+
+def test_the_cited_passage_is_not_listed_as_its_own_alternative():
+    """Listing the citation in "also retrieved" reads as a duplicate."""
+    documents = [
+        Document(page_content="first", metadata={"source": "a.pdf", "page": 1}),
+        Document(page_content="second", metadata={"source": "b.pdf", "page": 2}),
+        Document(page_content="third", metadata={"source": "c.pdf", "page": 3}),
+    ]
+
+    block = build_evidence(documents)
+
+    assert [c["document"] for c in block["candidates"]] == ["b.pdf", "c.pdf"]
 
 
 def test_evidence_reports_at_most_three_candidates():
@@ -78,13 +92,14 @@ def test_evidence_reports_at_most_three_candidates():
 
 def test_evidence_candidates_are_snippets_not_whole_passages():
     documents = [
-        Document(page_content="x" * 5000, metadata={"source": "a.pdf", "page": 1}),
+        Document(page_content="the cited passage", metadata={"source": "cited.pdf", "page": 1}),
+        Document(page_content="x" * 5000, metadata={"source": "a.pdf", "page": 2}),
     ]
 
     block = build_evidence(documents)
     assert len(block["candidates"][0]["snippet"]) < 5000
     # The cited passage itself is kept whole, since it is the evidence.
-    assert len(block["passage_text"]) == 5000
+    assert block["passage_text"] == "the cited passage"
 
 
 def test_evidence_carries_the_currency_of_the_cited_passage():
@@ -350,6 +365,28 @@ def test_each_attack_is_judged_against_its_own_retrieved_evidence(monkeypatch):
         "COOLING OFF PASSAGE",
         "DATA CONSENT PASSAGE",
     ]
+
+
+def test_each_per_attack_row_carries_its_readable_name(monkeypatch):
+    """The report must not print a raw internal key like "cooling_off" at the user."""
+    agent = ReTestAgent.__new__(ReTestAgent)
+    monkeypatch.setattr(agent, "judge_clause", lambda clause, attacks: [False] * len(attacks))
+
+    report = agent.evaluate_patch(
+        "original",
+        "patched",
+        attacks=[
+            {
+                "surface": "cooling_off",
+                "title": "Cooling-off and exit rights",
+                "severity": "High",
+                "attack_scenario": "scenario",
+            }
+        ],
+    )
+
+    assert report["per_attack"][0]["title"] == "Cooling-off and exit rights"
+    assert report["per_attack"][0]["surface"] == "cooling_off"
 
 
 def test_the_verifier_refuses_a_claim_evidence_count_mismatch(monkeypatch):

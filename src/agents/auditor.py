@@ -57,7 +57,10 @@ def build_evidence(results):
             "status": document.metadata.get("status"),
             "snippet": document.page_content[:SNIPPET_CHARS],
         }
-        for document in results[:CANDIDATES_REPORTED]
+        # The first result is the passage being cited, so the runner-up list starts
+        # after it. Listing the citation as one of its own alternatives made the
+        # "also retrieved" list look like it contained a duplicate.
+        for document in results[1 : CANDIDATES_REPORTED + 1]
     ]
     return block
 

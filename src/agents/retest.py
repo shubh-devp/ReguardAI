@@ -106,6 +106,9 @@ class ReTestAgent:
         comparisons = [
             {
                 "surface": attack.get("surface"),
+                # The readable name travels with the row, so the report does not
+                # have to show the raw internal key ("cooling_off").
+                "title": attack.get("title"),
                 "severity": attack.get("severity"),
                 "succeeded_before": before[index],
                 "succeeded_after": after[index],

@@ -152,9 +152,9 @@ function EvidenceCard({ evidence, audit }) {
         {typeof currency.age_days === 'number' ? ` · ${currency.age_days} days old as of ${currency.as_of}` : ''}
       </p>
 
-      {currency.warnings?.length ? (
+      {otherWarnings.length ? (
         <ul className="list-disc space-y-1 pl-5 text-xs text-amber-700">
-          {currency.warnings.map((warning) => (
+          {otherWarnings.map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
         </ul>
@@ -238,7 +238,7 @@ function ReTestCard({ retest }) {
           valueClass={retest.patched_successes === 0 ? 'text-green-700' : 'text-amber-600'}
         />
         <Metric
-          label="Of the exploits, blocked"
+          label="Exploits blocked by the patch"
           value={
             retest.remediation_success_rate == null
               ? 'n/a'
@@ -277,7 +277,7 @@ function ReTestCard({ retest }) {
             <tbody>
               {retest.per_attack.map((row) => (
                 <tr key={row.surface} className="border-b border-slate-100 last:border-0">
-                  <td className="py-2 pr-4 font-mono">{row.surface}</td>
+                  <td className="py-2 pr-4">{row.title || row.surface}</td>
                   <td className={`py-2 pr-4 ${outcomeClass(row.succeeded_before)}`}>
                     {outcomeLabel(row.succeeded_before)}
                   </td>
@@ -341,13 +341,14 @@ export default function AuditResults({ result, originalClause }) {
         </div>
 
         <p className="text-xs text-slate-500">
-          status <span className="font-mono">{status}</span> · policy #{result.policy_id} · clause #
-          {result.clause_id}
+          status <span className="font-mono">{status}</span>
+          {` · policy #${result.policy_id}`}
+          {` · clause #${result.clause_id}`}
           {result.finding_id != null ? ` · finding #${result.finding_id}` : ''}
           {result.request_id ? (
             <>
-              {' '}
-              · request <span className="font-mono">{result.request_id}</span>
+              {' · request '}
+              <span className="font-mono">{result.request_id}</span>
             </>
           ) : null}
         </p>
