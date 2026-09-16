@@ -130,13 +130,18 @@ function EvidenceCard({ evidence, audit }) {
   }
 
   const currency = evidence.currency || {}
+  // The line below already states when the date is unknown, so that warning is
+  // filtered out of the list instead of being printed a second time.
+  const otherWarnings = (currency.warnings || []).filter(
+    (warning) => !warning.startsWith('effective date not recorded'),
+  )
 
   return (
     <Card title="Regulatory evidence" subtitle={evidence.citation}>
       <div className="grid gap-4 sm:grid-cols-3">
-        <Metric label="Passage id" value={evidence.passage_id || '—'} />
-        <Metric label="Section" value={evidence.section || '—'} />
-        <Metric label="Status" value={currency.status || '—'} />
+        <Metric label="Passage id" value={evidence.passage_id || 'no curated entry'} />
+        <Metric label="Section" value={evidence.section || 'no curated entry'} />
+        <Metric label="Status" value={currency.status || 'not recorded'} />
       </div>
 
       <div>
