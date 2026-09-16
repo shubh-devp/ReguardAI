@@ -44,16 +44,23 @@ ONNX_MODEL_PATH = os.path.join(ONNX_MODEL_DIR, "onnx", "model.onnx")
 
 
 def corpus_fingerprint(corpus_path=CORPUS_PATH):
-    """SHA256 of the corpus file.
+    """SHA256 of the corpus text, independent of how it was checked out.
 
-    If the corpus changes, a saved index built from the old text is stale and has to
-    be rebuilt, so the vectors can never disagree with the passages they point at.
+    Line endings are normalised before hashing. Git stores LF and checks out CRLF on
+    Windows, so hashing the raw bytes made the fingerprint depend on which platform
+    computed it. The index was built and fingerprinted on Windows; the Linux
+    instance then read a different hash, concluded its index was stale, threw it
+    away and began re-embedding all 1160 chunks at startup. That rebuild is what
+    exhausted the instance and returned 502 on every route.
+
+    Normalising is safe because a JSON string cannot contain a raw newline - every
+    newline inside a chunk is an escape sequence, so the decoded text, and therefore
+    the vectors, are identical either way. The whole file is read at once because a
+    streaming version could split a CRLF pair across a block boundary.
     """
-    digest = hashlib.sha256()
     with open(corpus_path, "rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+        raw = handle.read()
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def index_matches_corpus(corpus_path=CORPUS_PATH, persist_directory=PERSIST_DIRECTORY):

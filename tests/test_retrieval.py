@@ -7,7 +7,7 @@ show up in.
 
 import json
 
-from src.retrieval import hybrid_retriever
+from src.retrieval import health, hybrid_retriever
 
 
 def test_every_chunk_carries_its_id(corpus):
@@ -15,6 +15,41 @@ def test_every_chunk_carries_its_id(corpus):
     stable handle on a specific chunk."""
     assert all("chunk_id" in document.metadata for document in corpus)
     assert all(isinstance(document.metadata["chunk_id"], int) for document in corpus)
+
+
+def test_the_committed_index_is_accepted_without_rebuilding():
+    """A mismatch here makes a deployment re-embed the whole corpus at startup.
+
+    That is not a slow path, it is a fatal one: re-embedding 1160 chunks needs
+    minutes and a large memory spike, which on a small instance kills the process
+    and returns 502 on every route.
+    """
+    assert health.index_matches_corpus() is True
+
+
+def test_the_corpus_fingerprint_ignores_line_endings(tmp_path):
+    """Git checks the corpus out as CRLF on Windows and LF everywhere else.
+
+    Hashing the raw bytes made the fingerprint depend on which platform computed it,
+    so an index built on Windows was read as stale on the Linux instance.
+    """
+    lf = tmp_path / "lf.json"
+    crlf = tmp_path / "crlf.json"
+    lf.write_bytes(b'{"a": 1}\n{"b": 2}\n')
+    crlf.write_bytes(b'{"a": 1}\r\n{"b": 2}\r\n')
+
+    assert health.corpus_fingerprint(str(lf)) == health.corpus_fingerprint(str(crlf))
+
+
+def test_the_corpus_fingerprint_still_changes_when_the_text_changes(tmp_path):
+    """Normalising line endings must not make the check meaningless."""
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    first.write_bytes(b'{"a": 1}\n')
+    second.write_bytes(b'{"a": 2}\n')
+
+    assert health.corpus_fingerprint(str(first)) != health.corpus_fingerprint(str(second))
+
 
 
 def test_corpus_holds_both_document_kinds(corpus):
