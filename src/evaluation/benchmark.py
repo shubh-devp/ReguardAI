@@ -1,12 +1,3 @@
-"""Loads the labelled benchmark and resolves its ground-truth evidence.
-
-The benchmark holds 24 policy clauses, each labelled for whether it is an
-exploitable regulatory gap, and each linked to the RBI passages that justify the
-label. This module is the single place that turns those links into something the
-evaluation scripts can compare against, so the ML and retrieval evaluations are
-scored on the same records.
-"""
-
 import json
 import logging
 
@@ -16,19 +7,12 @@ logger = logging.getLogger(__name__)
 
 BENCHMARK_PATH = "data/benchmarks/policy_loophole_eval_benchmark.json"
 
-# Severity is DERIVED, NOT ANNOTATED.
-#
-# The benchmark has no severity labels, and inventing them would make the
-# evaluation meaningless. Instead a transparent rule maps the clause's regulatory
-# topic to the consequence a lender faces, and every record built here is marked
-# `severity_source: "topic-rule"` so nobody mistakes it for human annotation.
-# It is reported as a distribution only and is never used as a training label.
 TOPIC_SEVERITY_RULE = {
-    "penal charges": "High",              # penal interest and compounding are expressly prohibited
-    "Data sharing/consent": "High",       # unauthorised data use carries statutory liability
-    "Direct disbursal": "High",           # funds must flow to the borrower's own account
-    "APR/KFS disclosure": "Medium",       # transparency duty; remediable by disclosure
-    "Cooling-off period": "Medium",       # borrower exit right
+    "penal charges": "High",              
+    "Direct disbursal": "High",          
+    "Data sharing/consent": "High",       
+    "APR/KFS disclosure": "Medium",       
+    "Cooling-off period": "Medium",     
     "LSP due diligence/governance": "Medium",
     "DLA/LSP disclosure": "Medium",
     "Credit line enhancement": "Medium",
@@ -46,12 +30,6 @@ def load_benchmark(path=BENCHMARK_PATH):
 
 
 def resolve_gold_evidence(clauses):
-    """Attach the gold evidence page for every clause.
-
-    Each clause lists ``mapped_passage_ids`` pointing at the curated corpus. This
-    turns those ids into the ``(document, page)`` pairs that retrieved chunks can
-    actually be compared against.
-    """
     resolved = []
     unresolved = []
 
@@ -85,7 +63,6 @@ def resolve_gold_evidence(clauses):
 
 
 def add_derived_severity(records):
-    """Attach the rule-derived severity, clearly marked as derived."""
     for record in records:
         record["severity"] = TOPIC_SEVERITY_RULE.get(record.get("topic"), DEFAULT_SEVERITY)
         record["severity_source"] = "topic-rule"
@@ -97,14 +74,12 @@ def add_derived_severity(records):
 
 
 def build_dataset(path=BENCHMARK_PATH):
-    """Return the evaluation records: clause, label, gold evidence, severity."""
     benchmark = load_benchmark(path)
     records = resolve_gold_evidence(benchmark["clauses"])
     return add_derived_severity(records)
 
 
 def summarize(records):
-    """Counts that describe the dataset, reported alongside any metric."""
     topics = {}
     severities = {}
     for record in records:
@@ -131,7 +106,6 @@ _passage_lookup = None
 
 
 def _passages_by_id():
-    """Curated passages keyed by passage id, built once."""
     global _passage_lookup
     if _passage_lookup is None:
         _passage_lookup = {}
@@ -146,158 +120,4 @@ def gold_page_set(record):
     """The set of ``(document, page)`` pairs that count as correct for a clause."""
     return {(page["document"], page["page"]) for page in record["gold_pages"]}
 
-
-
-
-
-
-
-# """Loads the labelled benchmark and resolves its ground-truth evidence.
-
-# The benchmark holds 24 policy clauses, each labelled for whether it is an
-# exploitable regulatory gap, and each linked to the RBI passages that justify the
-# label. This module is the single place that turns those links into something the
-# evaluation scripts can compare against, so the ML and retrieval evaluations are
-# scored on the same records.
-# """
-
-# from pathlib import Path
-# import json
-
-# from src.retrieval import provenance
-
-# BENCHMARK_FILE_PATH = Path("data/benchmarks/policy_loophole_eval_benchmark.json")
-
-# # Severity is DERIVED, NOT ANNOTATED.
-# #
-# # The benchmark has no severity labels, and inventing them would make the
-# # evaluation meaningless. Instead a transparent rule maps the clause's regulatory
-# # topic to the consequence a lender faces, and every record built here is marked
-# # `severity_source: "topic-rule"` so nobody mistakes it for human annotation.
-# # It is reported as a distribution only and is never used as a training label.
-# TOPIC_SEVERITY_RULE = {
-#     "penal charges": "High",               # penal interest and compounding are expressly prohibited
-#     "Data sharing/consent": "High",       # unauthorised data use carries statutory liability
-#     "Direct disbursal": "High",           # funds must flow to the borrower's own account
-#     "APR/KFS disclosure": "Medium",       # transparency duty; remediable by disclosure
-#     "Cooling-off period": "Medium",       # borrower exit right
-#     "LSP due diligence/governance": "Medium",
-#     "DLA/LSP disclosure": "Medium",
-#     "Credit line enhancement": "Medium",
-#     "FLDG/DLG": "Medium",
-#     "Grievance redressal": "Low",
-# }
-
-# DEFAULT_SEVERITY = "Medium"
-
-# # Internal cache for curated passages
-# _PASSAGE_CACHE = None
-
-
-# def load_benchmark(path: Path = BENCHMARK_FILE_PATH) -> dict:
-#     """Return the raw benchmark dict."""
-#     with open(path, "r", encoding="utf-8") as stream:
-#         return json.load(stream)
-
-
-# def _get_passages_lookup() -> dict:
-#     """Curated passages keyed by passage id, built once."""
-#     global _PASSAGE_CACHE
-#     if _PASSAGE_CACHE is None:
-#         _PASSAGE_CACHE = {}
-#         for item in provenance.load_curated_passages():
-#             passage_identifier = item.get("passage_id")
-#             if passage_identifier:
-#                 _PASSAGE_CACHE.setdefault(passage_identifier, []).append(item)
-#     return _PASSAGE_CACHE
-
-
-# def resolve_gold_evidence(clauses: list) -> list:
-#     """Attach the gold evidence page for every clause.
-
-#     Each clause lists ``mapped_passage_ids`` pointing at the curated corpus. This
-#     turns those ids into the ``(document, page)`` pairs that retrieved chunks can
-#     actually be compared against.
-#     """
-#     resolved_records = []
-#     unresolved_ids = []
-#     passage_mapping = _get_passages_lookup()
-
-#     for clause in clauses:
-#         gold_pages = []
-#         for passage_id in clause.get("mapped_passage_ids") or []:
-#             for passage in passage_mapping.get(passage_id, []):
-#                 gold_pages.append(
-#                     {
-#                         "passage_id": passage_id,
-#                         "document": passage.get("source_document"),
-#                         "page": passage.get("page"),
-#                         "section": passage.get("section"),
-#                         "regulation": passage.get("regulation"),
-#                     }
-#                 )
-#             if passage_id not in passage_mapping:
-#                 unresolved_ids.append(passage_id)
-
-#         if not gold_pages:
-#             print(f"Warning: No gold evidence resolved for clause {clause.get('clause_id')}")
-
-#         record = dict(clause)
-#         record["gold_pages"] = gold_pages
-#         resolved_records.append(record)
-
-#     if unresolved_ids:
-#         print(f"Warning: {len(unresolved_ids)} passage ids did not resolve to a curated passage.")
-
-#     return resolved_records
-
-
-# def add_derived_severity(records: list) -> list:
-#     """Attach the rule-derived severity, clearly marked as derived."""
-#     for record in records:
-#         record["severity"] = TOPIC_SEVERITY_RULE.get(record.get("topic"), DEFAULT_SEVERITY)
-#         record["severity_source"] = "topic-rule"
-#         if not record.get("is_loophole"):
-#             # A compliant clause has no violation to grade.
-#             record["severity"] = "n/a"
-#             record["severity_source"] = "not-applicable"
-#     return records
-
-
-# def build_dataset(path: Path = BENCHMARK_FILE_PATH) -> list:
-#     """Return the evaluation records: clause, label, gold evidence, severity."""
-#     benchmark_data = load_benchmark(path)
-#     records = resolve_gold_evidence(benchmark_data["clauses"])
-#     return add_derived_severity(records)
-
-
-# def summarize(records: list) -> dict:
-#     """Counts that describe the dataset, reported alongside any metric."""
-#     topics_count = {}
-#     severities_count = {}
-    
-#     for record in records:
-#         topics_count[record["topic"]] = topics_count.get(record["topic"], 0) + 1
-#         severities_count[record["severity"]] = severities_count.get(record["severity"], 0) + 1
-
-#     loopholes_total = sum(1 for record in records if record["is_loophole"])
-    
-#     return {
-#         "total_clauses": len(records),
-#         "loophole": loopholes_total,
-#         "compliant": len(records) - loopholes_total,
-#         "distinct_topics": len(topics_count),
-#         "topics": dict(sorted(topics_count.items())),
-#         "severity_distribution": dict(sorted(severities_count.items())),
-#         "severity_source": "derived from a documented topic rule, not annotated",
-#         "gold_evidence_pages": sum(len(record["gold_pages"]) for record in records),
-#         "distinct_gold_documents": len(
-#             {page["document"] for record in records for page in record["gold_pages"]}
-#         ),
-#     }
-
-
-# def gold_page_set(record: dict) -> set:
-#     """The set of ``(document, page)`` pairs that count as correct for a clause."""
-#     return {(page["document"], page["page"]) for page in record["gold_pages"]}
 
